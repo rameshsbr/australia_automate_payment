@@ -1,61 +1,29 @@
 import { AppShell } from "@/components/chrome";
-import { prisma } from "@/lib/prisma";
-
-async function getData() {
-  try {
-    const org = await prisma.organization.findFirst({
-      where: { name: "UB AdsMedia Pty Ltd" },
-      include: {
-        accounts: {
-          include: { transactions: { orderBy: { createdAt: "desc" }, take: 5 } }
-        }
-      }
-    });
-    return org;
-  } catch {
-    // WHY: DB not reachable or not created yet → render placeholders.
-    return null;
-  }
-}
 
 export default async function SummaryPage() {
-  const org = await getData();
-  const account = org?.accounts[0];
-  const bal = account ? Number(account.availableCents) / 100 : null;
   return (
     <AppShell>
       <h1 className="text-2xl font-semibold mb-4">Organisation summary</h1>
-
-      {/* Domestic payment accounts */}
       <section className="mb-6">
         <h2 className="text-base text-subt mb-2">Domestic payment accounts</h2>
         <div className="bg-panel rounded-xl2 shadow-soft border border-outline/40">
           <div className="p-4 border-b border-outline/30">
-            <input
-              className="w-full bg-transparent outline-none text-sm text-subt placeholder:text-subt/70"
-              placeholder="Search accounts by name…"
-            />
+            <input className="w-full bg-transparent outline-none text-sm text-subt placeholder:text-subt/70" placeholder="Search accounts by name…"/>
           </div>
           <div className="p-2">
             <div className="flex items-center justify-between px-3 py-3 rounded-lg hover:bg-surface/50">
               <div>
-                <div className="text-sm">{account?.name ?? "—"}</div>
-                <div className="text-xs text-subt">#{account?.number ?? "—"}</div>
+                <div className="text-sm">—</div>
+                <div className="text-xs text-subt">#—</div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-subt">Available</div>
-                <div className="text-lg font-semibold">
-                  {bal != null
-                    ? `$${bal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
-                    : "—"}
-                </div>
+                <div className="text-lg font-semibold">—</div>
               </div>
             </div>
           </div>
         </div>
       </section>
-
-      {/* Other services */}
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="bg-panel rounded-xl2 shadow-soft border border-outline/40 p-6">
           <div className="flex items-center justify-between mb-4">
@@ -65,9 +33,7 @@ export default async function SummaryPage() {
           <div className="flex flex-col items-center justify-center text-center py-8">
             <div className="text-2xl mb-2">🌐</div>
             <div className="font-medium">Receive and manage foreign currencies</div>
-            <div className="text-subt text-sm mt-1">
-              Get in touch to set up a foreign exchange account
-            </div>
+            <div className="text-subt text-sm mt-1">Get in touch to set up a foreign exchange account</div>
             <button className="mt-6 inline-flex items-center gap-2 text-sm bg-surface border border-outline/40 rounded-lg px-4 py-2 hover:bg-surface/70">
               💬 Speak with your Relationship Manager to set up foreign exchange
             </button>
@@ -78,9 +44,7 @@ export default async function SummaryPage() {
           <div className="flex flex-col items-center justify-center text-center py-8">
             <div className="text-2xl mb-2">🛟</div>
             <div className="font-medium">Get support</div>
-            <div className="text-subt text-sm mt-1">
-              Submit or track support requests in Service Desk
-            </div>
+            <div className="text-subt text-sm mt-1">Submit or track support requests in Service Desk</div>
             <button className="mt-6 inline-flex items-center gap-2 text-sm bg-surface border border-outline/40 rounded-lg px-4 py-2 hover:bg-surface/70">
               🔗 Open Service Desk
             </button>

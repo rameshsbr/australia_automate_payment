@@ -15,35 +15,32 @@ async function main() {
       name: "UB AdsMedia Pty Ltd Account",
       number: "6279059743697945",
       environment: "SANDBOX",
-      availableCents: BigInt(0)
+      availableCents: BigInt(56204913) // $562,049.13
     },
     update: {}
   });
 
-  const count = await prisma.transaction.count({ where: { accountId: account.id } });
-  if (count === 0) {
-    const txs = Array.from({ length: 4 }).map((_, i) => ({
-      accountId: account.id,
-      environment: "SANDBOX" as Environment,
-      amountCents: BigInt((i % 2 === 0 ? 1 : -1) * (10000 + i * 531)),
-      currency: "AUD",
-      direction: i % 2 === 0 ? "credit" : "debit",
-      description: i % 2 === 0 ? "Payment received" : "Payout processed"
-    }));
-    await prisma.transaction.createMany({ data: txs });
-  }
+  // sample transactions
+  const txs = Array.from({ length: 6 }).map((_, i) => ({
+    accountId: account.id,
+    environment: "SANDBOX" as Environment,
+    amountCents: BigInt((i % 2 === 0 ? 1 : -1) * (10000 + i * 531)),
+    currency: "AUD",
+    direction: i % 2 === 0 ? "credit" : "debit",
+    description: i % 2 === 0 ? "Payment received" : "Payout processed"
+  }));
+  await prisma.transaction.createMany({ data: txs });
 
-  await prisma.apiKey.upsert({
-    where: { key: "sk_demo_clone_api_key_change_me" },
-    create: {
+  // clone-API key
+  await prisma.apiKey.create({
+    data: {
       key: "sk_demo_clone_api_key_change_me",
       label: "Sandbox key",
       environment: "SANDBOX",
       organizationId: org.id
-    },
-    update: {}
+    }
   });
 
-  console.log("Seed complete (idempotent).");
+  console.log("Seed complete.");
 }
 main().finally(() => prisma.$disconnect());

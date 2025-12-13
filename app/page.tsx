@@ -1,2 +1,6 @@
 import { redirect } from "next/navigation";
-export default function Index() { redirect("/summary"); }
+
+/** WHY: Home should land on Summary. */
+export default function Index() {
+  redirect("/summary");
+}
