@@ -1,19 +1,42 @@
+// file: app/payments/review/page.tsx
 "use client";
 import { AppShell } from "@/components/chrome";
 import { DatePreset, EditColumns, FilterChip } from "@/components/payments-common";
 import { Popover } from "@/components/ui";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useSearchParams, usePathname, useRouter } from "next/navigation";
 
 const STATUS = ["Pending approval","Approved","Rejected","Transaction Success","Transaction Failed"];
 const TYPE = ["BPay","Direct Entry","mAccount"];
 
 export default function ReviewPayments() {
-  const [date, setDate] = useState("Last 7 days");
-  const [status, setStatus] = useState<string>("Pending approval");
-  const [type, setType] = useState<string|undefined>(undefined);
+  // WHY: read URL once for initial state; keep UI/URL in sync afterward.
+  const searchParams = useSearchParams();
+  const pathname = usePathname();
+  const router = useRouter();
+  const initialDate   = useMemo(() => searchParams.get("date")   ?? "Last 7 days", [searchParams]);
+  const initialStatus = useMemo(() => searchParams.get("status") ?? "Pending approval", [searchParams]);
+  const initialType   = useMemo(() => searchParams.get("type")   ?? "", [searchParams]);
+
+  const [date, setDate] = useState(initialDate);
+  const [status, setStatus] = useState<string>(initialStatus);
+  const [type, setType] = useState<string|undefined>(initialType || undefined);
   const [columns, setColumns] = useState({
     submitted: true, type: true, recipient: true, createdBy: true, reference: true, status: true, amount: true
   });
+
+  function setParam(key: string, value?: string) {
+    const p = new URLSearchParams(searchParams.toString());
+    if (value && value.length) p.set(key, value); else p.delete(key);
+    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
+  }
+
+  function onDateChange(next: string) {
+    setDate(next);
+    setParam("date", next);
+  }
+  function applyStatus() { setParam("status", status); }
+  function applyType()   { setParam("type", type || ""); }
 
   return (
     <AppShell>
@@ -22,7 +45,8 @@ export default function ReviewPayments() {
       {/* toolbar */}
       <div className="flex items-center gap-2 mb-4">
         <input className="flex-1 bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm placeholder:text-subt/70" placeholder="Search payments..." />
-        <DatePreset value={date} onChange={setDate} />
+        <DatePreset value={date} onChange={onDateChange} />
+
         <Popover
           button={({open)=>(
             <FilterChip><span>Status</span><span className="text-subt">{status}</span><span className="ml-1">{open?"▴":"▾"}</span></FilterChip>
@@ -36,9 +60,10 @@ export default function ReviewPayments() {
                 <span>{s}</span>
               </label>
             ))}
-            <button className="mt-2 w-full bg-[#6d44c9] rounded h-8 text-sm">Apply</button>
+            <button className="mt-2 w-full bg-[#6d44c9] rounded h-8 text-sm" onClick={applyStatus}>Apply</button>
           </div>
         </Popover>
+
         <Popover
           button={({open)=>(
             <FilterChip><span>Type</span><span className="text-subt">{type ?? ""}</span><span className="ml-1">{open?"▴":"▾"}</span></FilterChip>
@@ -52,13 +77,11 @@ export default function ReviewPayments() {
                 <span>{s}</span>
               </label>
             ))}
-            <button className="mt-2 w-full bg-[#6d44c9] rounded h-8 text-sm">Apply</button>
+            <button className="mt-2 w-full bg-[#6d44c9] rounded h-8 text-sm" onClick={applyType}>Apply</button>
           </div>
         </Popover>
-        <Popover
-          button={({open)=>(<FilterChip>+ Add filter</FilterChip>)}
-          className="w-[220px]"
-        >
+
+        <Popover button={({open)=>(<FilterChip>+ Add filter</FilterChip>)} className="w-[220px]">
           <div className="text-sm space-y-1">
             <div className="px-1 py-1 hover:bg-panel/60 rounded">Reference</div>
             <div className="px-1 py-1 hover:bg-panel/60 rounded">Amount</div>
