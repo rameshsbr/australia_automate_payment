@@ -14,7 +14,7 @@ async function getData() {
 export default async function SummaryPage() {
   const org = await getData();
   const account = org?.accounts[0];
-  const bal = Number(account?.availableCents ?? 0) / 100;
+  const bal = account ? Number(account.availableCents) / 100 : null;
   return (
     <AppShell>
       <h1 className="text-2xl font-semibold mb-4">Organisation summary</h1>
@@ -32,13 +32,15 @@ export default async function SummaryPage() {
           <div className="p-2">
             <div className="flex items-center justify-between px-3 py-3 rounded-lg hover:bg-surface/50">
               <div>
-                <div className="text-sm">{account?.name ?? "Account"}</div>
-                <div className="text-xs text-subt">#{account?.number}</div>
+                <div className="text-sm">{account?.name ?? "—"}</div>
+                <div className="text-xs text-subt">#{account?.number ?? "—"}</div>
               </div>
               <div className="text-right">
                 <div className="text-xs text-subt">Available</div>
                 <div className="text-lg font-semibold">
-                  ${bal.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  {bal != null
+                    ? `$${bal.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
+                    : "—"}
                 </div>
               </div>
             </div>
