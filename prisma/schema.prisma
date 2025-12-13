@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Environment {
+  SANDBOX
+  LIVE
+}
+
+model Organization {
+  id           String        @id @default(cuid())
+  name         String
+  createdAt    DateTime      @default(now())
+  accounts     Account[]
+  apiKeys      ApiKey[]
+  users        User[]
+  webhooks     WebhookEvent[]
+  apiLogs      ApiLog[]
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  displayName    String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+}
+
+model Account {
+  id             String   @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  name           String
+  number         String   @unique
+  environment    Environment
+  availableCents BigInt   @default(0)
+  createdAt      DateTime @default(now())
+  transactions   Transaction[]
+}
+
+model Transaction {
+  id          String      @id @default(cuid())
+  accountId   String
+  account     Account     @relation(fields: [accountId], references: [id])
+  environment Environment
+  amountCents BigInt
+  currency    String      @default("AUD")
+  direction   String      // "credit" | "debit"
+  description String
+  createdAt   DateTime    @default(now())
+}
+
+model ApiKey {
+  id             String      @id @default(cuid())
+  key            String      @unique
+  label          String
+  environment    Environment
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime     @default(now())
+  active         Boolean      @default(true)
+}
+
+model ApiLog {
+  id             String      @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  environment    Environment
+  path           String
+  method         String
+  status         Int
+  reqBody        Json?
+  resBody        Json?
+  createdAt      DateTime @default(now())
+}
+
+model WebhookEvent {
+  id             String      @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  environment    Environment
+  topic          String
+  payload        Json
+  createdAt      DateTime @default(now())
+}
