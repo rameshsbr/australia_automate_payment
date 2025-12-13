@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "strict": true,
+    "baseUrl": ".",
+    "paths": { "@/*": ["./*"] },
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": false,
+    "noEmit": true
+  },
+  "include": ["**/*.ts", "**/*.tsx", "prisma/seed.ts"]
+}
