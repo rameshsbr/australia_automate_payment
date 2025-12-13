@@ -2,13 +2,20 @@ import { AppShell } from "@/components/chrome";
 import { prisma } from "@/lib/prisma";
 
 async function getData() {
-  const org = await prisma.organization.findFirst({
-    where: { name: "UB AdsMedia Pty Ltd" },
-    include: {
-      accounts: { include: { transactions: { orderBy: { createdAt: "desc" }, take: 5 } } }
-    }
-  });
-  return org;
+  try {
+    const org = await prisma.organization.findFirst({
+      where: { name: "UB AdsMedia Pty Ltd" },
+      include: {
+        accounts: {
+          include: { transactions: { orderBy: { createdAt: "desc" }, take: 5 } }
+        }
+      }
+    });
+    return org;
+  } catch {
+    // WHY: DB not reachable or not created yet → render placeholders.
+    return null;
+  }
 }
 
 export default async function SummaryPage() {

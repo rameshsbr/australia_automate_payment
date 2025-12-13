@@ -1,26 +1,20 @@
 import { AppShell } from "@/components/chrome";
-import { TransactionsUI } from "@/components/transactions-table";
 import { prisma } from "@/lib/prisma";
+import { TransactionsUI } from "@/components/transactions-table";
 
 async function getTxs() {
   try {
-    const txs = await prisma.transaction.findMany({
-      orderBy: { createdAt: "desc" },
-      take: 100
-    });
-    return txs.map((t) => ({
+    const txs = await prisma.transaction.findMany({ orderBy: { createdAt: "desc" }, take: 100 });
+    return txs.map(t => ({
       id: t.id,
       createdAt: t.createdAt.toISOString(),
       description: t.description,
-      // WHY: Keep numbers empty until real data exists.
-      debit: t.direction === "debit" ? Number(t.amountCents) / 100 : null,
-      credit: t.direction === "credit" ? Number(t.amountCents) / 100 : null,
+      debit: t.direction === "debit" ? Number(t.amountCents)/100 : null,
+      credit: t.direction === "credit" ? Number(t.amountCents)/100 : null,
       balance: null,
       type: null
     }));
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 }
 
 export default async function TransactionsPage() {

@@ -1,17 +1,40 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "jsx": "preserve",
     "strict": true,
     "baseUrl": ".",
-    "paths": { "@/*": ["./*"] },
+    "paths": {
+      "@/*": [
+        "./*"
+      ]
+    },
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "allowJs": false,
-    "noEmit": true
+    "noEmit": true,
+    "skipLibCheck": true,
+    "incremental": true,
+    "isolatedModules": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ]
   },
-  "include": ["**/*.ts", "**/*.tsx", "prisma/seed.ts"]
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "prisma/seed.ts",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
 }
