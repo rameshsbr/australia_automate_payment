@@ -15,9 +15,10 @@ export default function ReviewPayments() {
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
-  const initialDate   = useMemo(() => searchParams.get("date")   ?? "Last 7 days", [searchParams]);
-  const initialStatus = useMemo(() => searchParams.get("status") ?? "Pending approval", [searchParams]);
-  const initialType   = useMemo(() => searchParams.get("type")   ?? "", [searchParams]);
+
+  const initialDate   = useMemo(() => searchParams.get("date")   ?? "Last 7 days",        [searchParams]);
+  const initialStatus = useMemo(() => searchParams.get("status") ?? "Pending approval",   [searchParams]);
+  const initialType   = useMemo(() => searchParams.get("type")   ?? "",                   [searchParams]);
 
   const [date, setDate] = useState(initialDate);
   const [status, setStatus] = useState<string>(initialStatus);
@@ -26,18 +27,22 @@ export default function ReviewPayments() {
     submitted: true, type: true, recipient: true, createdBy: true, reference: true, status: true, amount: true
   });
 
-  function setParam(key: string, value?: string) {
+  // NOTE: use arrow fns (expressions) to avoid SWC parse issues.
+  const setParam = (key: string, value?: string) => {
     const p = new URLSearchParams(searchParams.toString());
-    if (value && value.length) p.set(key, value); else p.delete(key);
-    router.replace(`${pathname}?${p.toString()}`, { scroll: false });
-  }
+    if (value && value.length) p.set(key, value);
+    else p.delete(key);
+    const q = p.toString();
+    router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+  };
 
-  function onDateChange(next: string) {
+  const onDateChange = (next: string) => {
     setDate(next);
     setParam("date", next);
-  }
-  function applyStatus() { setParam("status", status); }
-  function applyType()   { setParam("type", type || ""); }
+  };
+
+  const applyStatus = () => { setParam("status", status); };
+  const applyType   = () => { setParam("type", type || ""); };
 
   return (
     <AppShell>
@@ -45,12 +50,20 @@ export default function ReviewPayments() {
 
       {/* toolbar */}
       <div className="flex items-center gap-2 mb-4">
-        <input className="flex-1 bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm placeholder:text-subt/70" placeholder="Search payments..." />
+        <input
+          className="flex-1 bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm placeholder:text-subt/70"
+          placeholder="Search payments..."
+        />
+
         <DatePreset value={date} onChange={onDateChange} />
 
         <Popover
-          button={({open)=>(
-            <FilterChip><span>Status</span><span className="text-subt">{status}</span><span className="ml-1">{open?"▴":"▾"}</span></FilterChip>
+          button={({open})=>(
+            <FilterChip>
+              <span>Status</span>
+              <span className="text-subt">{status}</span>
+              <span className="ml-1">{open ? "▴" : "▾"}</span>
+            </FilterChip>
           )}
           className="w-[260px]"
         >
@@ -66,8 +79,12 @@ export default function ReviewPayments() {
         </Popover>
 
         <Popover
-          button={({open)=>(
-            <FilterChip><span>Type</span><span className="text-subt">{type ?? ""}</span><span className="ml-1">{open?"▴":"▾"}</span></FilterChip>
+          button={({open})=>(
+            <FilterChip>
+              <span>Type</span>
+              <span className="text-subt">{type ?? ""}</span>
+              <span className="ml-1">{open ? "▴" : "▾"}</span>
+            </FilterChip>
           )}
           className="w-[240px]"
         >
@@ -82,7 +99,7 @@ export default function ReviewPayments() {
           </div>
         </Popover>
 
-        <Popover button={({open)=>(<FilterChip>+ Add filter</FilterChip>)} className="w-[220px]">
+        <Popover button={()=>(<FilterChip>+ Add filter</FilterChip>)} className="w-[220px]">
           <div className="text-sm space-y-1">
             <div className="px-1 py-1 hover:bg-panel/60 rounded">Reference</div>
             <div className="px-1 py-1 hover:bg-panel/60 rounded">Amount</div>
