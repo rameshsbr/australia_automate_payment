@@ -1,31 +1,24 @@
-// file: app/statements/page.tsx
 "use client";
 
 import { useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/chrome";
-import { FilterChip } from "@/components/payments-common";
+import { DatePreset, FilterChip } from "@/components/payments-common";
 import { Popover } from "@/components/ui";
 
-/**
- * Notes
- * - This is UI-only (no DB). It mirrors the Statements screen in your screenshots.
- * - URL params kept in sync for shareable filters: ?date=...&type=...
- */
-
-const TYPE = [
+// matches the UI labels in your screenshots
+const TYPE_OPTIONS = [
   "Daily Statements",
   "Full Monthly Financial Statements and Tax Invoices",
 ];
 
 export default function StatementsPage() {
-  // url helpers
+  // read once from URL, then keep UI/URL in sync (so refreshes/bookmarks keep state)
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
 
-  // initial state from URL (so refresh preserves filters)
-  const initialDateLabel = useMemo(
+  const initialDate = useMemo(
     () => searchParams.get("date") ?? "2025-11-14 to 2025-12-14",
     [searchParams]
   );
@@ -34,12 +27,12 @@ export default function StatementsPage() {
     [searchParams]
   );
 
-  // local state
-  const [dateLabel, setDateLabel] = useState<string>(initialDateLabel);
+  const [date, setDate] = useState<string>(initialDate);
   const [type, setType] = useState<string | undefined>(
     initialType || undefined
   );
 
+  // util: set/remove a single query param and keep everything else
   function setParam(key: string, value?: string) {
     const p = new URLSearchParams(searchParams.toString());
     if (value && value.length) p.set(key, value);
@@ -47,8 +40,8 @@ export default function StatementsPage() {
     router.replace(`${pathname}?${p.toString()}`, { scroll: false });
   }
 
-  function applyDate(next: string) {
-    setDateLabel(next);
+  function onDateChange(next: string) {
+    setDate(next);
     setParam("date", next);
   }
 
@@ -60,118 +53,54 @@ export default function StatementsPage() {
     <AppShell>
       <h1 className="text-2xl font-semibold mb-4">Statements</h1>
 
-      {/* toolbar */}
+      {/* toolbar (search + chips, aligned like your screenshots) */}
       <div className="flex items-center gap-2 mb-4">
         <input
           className="flex-1 bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm placeholder:text-subt/70"
           placeholder="Search..."
+          aria-label="Search statements"
         />
 
-        {/* Date chip with a lightweight 'custom range' popover */}
-        <Popover
-          button={({ open }) => (
-            <FilterChip>
-              <span>Date</span>
-              <span className="text-subt">{dateLabel}</span>
-              <span className="ml-1">{open ? "▴" : "▾"}</span>
-            </FilterChip>
-          )}
-          className="w-[320px]"
-        >
-          {/* Mini 'Custom' calendar-style panel to match screenshots (UI only) */}
-          <div className="text-sm">
-            <div className="mb-2">
-              <label className="block text-xs mb-1 text-subt">Filter by Date</label>
-              <select
-                className="w-full h-8 bg-panel border border-outline/40 rounded px-2 text-sm"
-                value="Custom"
-                onChange={() => {}}
-              >
-                <option>Custom</option>
-                <option>Today</option>
-                <option>Yesterday</option>
-                <option>Last 7 days</option>
-                <option>Last Week</option>
-                <option>This Month</option>
-                <option>Last Month</option>
-              </select>
-            </div>
+        {/* Date chip shows the current range; DatePreset provides the calendar popover */}
+        <DatePreset value={date} onChange={onDateChange} label="Date" />
 
-            {/* Faux range picker grid — just visuals so it looks right now */}
-            <div className="flex items-center justify-between mb-2">
-              <div className="inline-flex items-center gap-2">
-                <select className="bg-panel border border-outline/40 rounded h-8 px-2">
-                  <option>November</option>
-                  <option>December</option>
-                  <option>January</option>
-                </select>
-                <select className="bg-panel border border-outline/40 rounded h-8 px-2">
-                  <option>2025</option>
-                  <option>2024</option>
-                  <option>2023</option>
-                </select>
-              </div>
-              <div className="inline-flex items-center gap-2">
-                <button className="bg-panel border border-outline/40 rounded h-8 w-8">‹</button>
-                <button className="bg-panel border border-outline/40 rounded h-8 w-8">›</button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-7 gap-1 text-center text-xs text-subt/80 mb-2">
-              <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div>Sat</div><div>Sun</div>
-            </div>
-            {/* Grid placeholders to mimic calendar days */}
-            <div className="grid grid-cols-7 gap-1 text-center mb-3">
-              {Array.from({ length: 35 }).map((_, i) => (
-                <div
-                  key={i}
-                  className="h-8 leading-8 rounded border border-transparent hover:border-outline/40 hover:bg-panel/60 cursor-default"
-                >
-                  {/* intentionally blank to keep UI-only feel */}
-                </div>
-              ))}
-            </div>
-
-            <button
-              className="w-full bg-[#6d44c9] rounded h-8 text-sm"
-              onClick={() => applyDate(dateLabel)}
-            >
-              Apply
-            </button>
-          </div>
-        </Popover>
-
-        {/* Type chip */}
+        {/* Type filter behaves like your popover with Apply */}
         <Popover
           button={({ open }) => (
             <FilterChip>
               <span>Type</span>
-              <span className="text-subt">{type ?? ""}</span>
+              <span className="text-subt">
+                {type ?? ""}
+              </span>
               <span className="ml-1">{open ? "▴" : "▾"}</span>
             </FilterChip>
           )}
-          className="w-[340px]"
+          className="w-[380px]"
+          align="end"
         >
           <div className="text-sm space-y-1">
-            {TYPE.map((t) => (
-              <label key={t} className="flex items-center gap-2">
+            {TYPE_OPTIONS.map((opt) => (
+              <label key={opt} className="flex items-center gap-2">
                 <input
                   type="radio"
                   name="statement-type"
-                  checked={type === t}
-                  onChange={() => setType(t)}
+                  checked={type === opt}
+                  onChange={() => setType(opt)}
                 />
-                <span>{t}</span>
+                <span>{opt}</span>
               </label>
             ))}
-            <button className="mt-2 w-full bg-[#6d44c9] rounded h-8 text-sm" onClick={applyType}>
+            <button
+              onClick={applyType}
+              className="mt-2 w-full bg-[#6d44c9] rounded h-8 text-sm"
+            >
               Apply
             </button>
           </div>
         </Popover>
       </div>
 
-      {/* empty state panel */}
+      {/* empty state (centered card) */}
       <div className="bg-panel rounded-xl2 border border-outline/40 p-8 text-center text-subt">
         <div className="py-16">
           <div className="text-2xl mb-2">🧾</div>
@@ -182,8 +111,8 @@ export default function StatementsPage() {
         </div>
       </div>
 
-      {/* bottom meta line to mirror “Showing 0–0 of 0” feel */}
-      <div className="mt-3 text-xs text-subt">Showing 0 – 0 of 0</div>
+      {/* footer line like “Showing 0 – 0 of 0” */}
+      <div className="mt-2 text-xs text-subt">Showing 0 – 0 of 0</div>
     </AppShell>
   );
 }
