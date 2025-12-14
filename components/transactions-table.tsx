@@ -2,6 +2,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { DateRange, DateRangeFilter } from "./date-range";
 import { Popover, Toggle } from "./ui";
+import NewPaymentMenu from "@/components/payments/new-payment-menu";
 
 type Tx = {
   id: string;
@@ -150,22 +151,7 @@ export function TransactionsUI({ initial }: { initial: Tx[] }) {
             ⬇️ Export
           </button>
           {/* New payment */}
-          <Popover
-            align="right"
-            button={() => (
-              <div className="inline-flex items-center gap-2 bg-[#6d44c9] rounded-lg px-3 h-9 text-sm">
-                + New payment
-              </div>
-            )}
-          >
-            <div className="text-sm">
-              <button className="block w-full text-left px-2 py-1 rounded hover:bg-panel/60">Single payment</button>
-              <button className="block w-full text-left px-2 py-1 rounded hover:bg-panel/60">Batch payment</button>
-              <button className="block w-full text-left px-2 py-1 rounded hover:bg-panel/60">
-                Simulate a payment
-              </button>
-            </div>
-          </Popover>
+          <NewPaymentMenu />
         </div>
       </div>
 

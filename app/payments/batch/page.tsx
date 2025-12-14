@@ -2,6 +2,7 @@
 import { AppShell } from "@/components/chrome";
 import { DatePreset, EditColumns, FilterChip } from "@/components/payments-common";
 import { Popover } from "@/components/ui";
+import NewPaymentMenu from "@/components/payments/new-payment-menu";
 import { useState } from "react";
 
 export default function BatchPayments() {
@@ -19,7 +20,7 @@ export default function BatchPayments() {
         <div className="ml-auto flex items-center gap-2">
           <EditColumns columns={columns} setColumns={setColumns} />
           <button className="inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm">⬇️ Export</button>
-          <button className="inline-flex items-center gap-2 bg-[#6d44c9] rounded-lg px-3 h-9 text-sm">+ New payment</button>
+          <NewPaymentMenu />
         </div>
       </div>
 
