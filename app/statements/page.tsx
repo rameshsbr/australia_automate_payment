@@ -1,4 +1,3 @@
-// app/statements/page.tsx
 "use client";
 
 import { useMemo, useState } from "react";
@@ -7,13 +6,14 @@ import { AppShell } from "@/components/chrome";
 import { DatePreset, FilterChip } from "@/components/payments-common";
 import { Popover } from "@/components/ui";
 
+// matches the UI labels in your screenshots
 const TYPE_OPTIONS = [
   "Daily Statements",
   "Full Monthly Financial Statements and Tax Invoices",
 ];
 
 export default function StatementsPage() {
-  // Read initial state from URL (so refreshes/bookmarks keep filters)
+  // read once from URL, then keep UI/URL in sync (so refreshes/bookmarks keep state)
   const searchParams = useSearchParams();
   const pathname = usePathname();
   const router = useRouter();
@@ -32,6 +32,7 @@ export default function StatementsPage() {
     initialType || undefined
   );
 
+  // util: set/remove a single query param and keep everything else
   function setParam(key: string, value?: string) {
     const p = new URLSearchParams(searchParams.toString());
     if (value && value.length) p.set(key, value);
@@ -52,29 +53,30 @@ export default function StatementsPage() {
     <AppShell>
       <h1 className="text-2xl font-semibold mb-4">Statements</h1>
 
-      {/* Row 1: Search (full width) */}
-      <div className="mb-2">
+      {/* toolbar (search + chips, aligned like your screenshots) */}
+      <div className="flex items-center gap-2 mb-4">
         <input
-          className="w-full bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm placeholder:text-subt/70"
+          className="flex-1 bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm placeholder:text-subt/70"
           placeholder="Search..."
           aria-label="Search statements"
         />
-      </div>
 
-      {/* Row 2: Chips (left-aligned under search) */}
-      <div className="flex items-center gap-2 mb-4">
-        <DatePreset label="Date" value={date} onChange={onDateChange} />
+        {/* Date chip shows the current range; DatePreset provides the calendar popover */}
+        <DatePreset value={date} onChange={onDateChange} label="Date" />
 
+        {/* Type filter behaves like your popover with Apply */}
         <Popover
-          // keep aligned to the chip (no right float), like in your screenshots
           button={({ open }) => (
             <FilterChip>
               <span>Type</span>
-              <span className="text-subt">{type ?? ""}</span>
+              <span className="text-subt">
+                {type ?? ""}
+              </span>
               <span className="ml-1">{open ? "▴" : "▾"}</span>
             </FilterChip>
           )}
-          className="w-[360px]"
+          className="w-[380px]"
+          align="end"
         >
           <div className="text-sm space-y-1">
             {TYPE_OPTIONS.map((opt) => (
@@ -98,7 +100,7 @@ export default function StatementsPage() {
         </Popover>
       </div>
 
-      {/* Empty state */}
+      {/* empty state (centered card) */}
       <div className="bg-panel rounded-xl2 border border-outline/40 p-8 text-center text-subt">
         <div className="py-16">
           <div className="text-2xl mb-2">🧾</div>
@@ -109,7 +111,7 @@ export default function StatementsPage() {
         </div>
       </div>
 
-      {/* Footer */}
+      {/* footer line like “Showing 0 – 0 of 0” */}
       <div className="mt-2 text-xs text-subt">Showing 0 – 0 of 0</div>
     </AppShell>
   );
