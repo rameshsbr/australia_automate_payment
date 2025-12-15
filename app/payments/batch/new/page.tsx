@@ -1,161 +1,101 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/chrome";
 
-export default function NewBatchPayment() {
+export default function NewBatchPaymentPage() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const [file, setFile] = useState<File | null>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [fileName, setFileName] = useState<string | null>(null);
 
-  function openPicker() {
+  function onPick() {
     inputRef.current?.click();
   }
 
-  function onFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    // keep UI strict: CSV only, max 1 file (just mimicked – no upload yet)
-    if (!/\.csv$/i.test(f.name)) {
-      alert("Please select a CSV file");
-      (e.target as HTMLInputElement).value = "";
-      return;
-    }
-    setFile(f);
+  function onFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const f = e.target.files?.[0] ?? null;
+    setFileName(f ? f.name : null);
   }
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
     e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
-    const f = e.dataTransfer.files?.[0];
-    if (!f) return;
-    if (!/\.csv$/i.test(f.name)) {
-      alert("Please drop a CSV file");
-      return;
-    }
-    setFile(f);
-  }
-
-  function onDragOver(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(true);
-  }
-
-  function onDragLeave(e: React.DragEvent<HTMLDivElement>) {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragOver(false);
+    const f = e.dataTransfer.files?.[0] ?? null;
+    setFileName(f ? f.name : null);
   }
 
   return (
     <AppShell>
-      <div className="mb-2">
-        <Link
-          href="/payments/batch"
-          className="text-sm text-subt hover:text-white inline-flex items-center gap-2"
-        >
-          ← Payments
-        </Link>
-      </div>
+      <div className="text-sm text-subt mb-2">← Payments</div>
+      <h1 className="text-2xl font-semibold mb-6">New batch payment</h1>
 
-      <h1 className="text-2xl font-semibold mb-4">New batch payment</h1>
-
-      <div className="bg-panel rounded-xl2 border border-outline/40 max-w-2xl overflow-hidden">
+      <div className="bg-panel rounded-xl2 border border-outline/40 p-4 max-w-[680px]">
         {/* From */}
-        <div className="p-4 border-b border-outline/40">
-          <div className="text-sm text-subt">From</div>
-
-          {/* NOTE: leave data empty/placeholder – it will be filled after integration */}
-          <div className="mt-2 bg-surface border border-outline/40 rounded-lg p-3 flex items-center justify-between">
+        <div className="bg-surface rounded-lg border border-outline/30 p-3 mb-6">
+          <div className="text-sm text-subt mb-1">From</div>
+          <div className="flex items-center justify-between">
             <div>
               <div className="font-medium">UB AdsMedia Pty Ltd</div>
-              <div className="text-xs text-subt">#</div>
+              <div className="text-subt text-sm">#6279059737797230</div>
             </div>
             <div className="text-right">
-              <div className="text-xs text-subt">Available</div>
-              <div className="font-medium">$0.00</div>
+              <div className="text-sm text-subt">Available</div>
+              <div className="text-white">$0.00</div>
             </div>
           </div>
         </div>
 
         {/* Upload */}
-        <div className="p-4">
-          <div className="text-sm text-subt mb-1">Direct entry file upload</div>
-          <div className="text-xs text-subt mb-2">CSV only, max 1 file.</div>
+        <div className="mb-2 font-medium">Direct entry file upload</div>
+        <div className="text-xs text-subt mb-3">CSV only, max 1 file.</div>
 
-          <div
-            className={[
-              "rounded-xl border-2 border-dashed border-outline/40 transition-colors",
-              dragOver ? "bg-panel/70" : "bg-transparent",
-            ].join(" ")}
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-          >
-            <div className="px-6 py-8 text-center">
-              <input
-                ref={inputRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                onChange={onFilePicked}
-              />
-
-              {/* button (not nested inside another button) */}
-              <div className="flex justify-center">
-                <button
-                  type="button"
-                  onClick={openPicker}
-                  className="inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-4 h-10 text-sm"
-                >
-                  <span>📄</span>
-                  <span>Browse files</span>
-                </button>
-              </div>
-
-              <div className="mt-2 text-sm text-subt">
-                or drop a file here to upload
-              </div>
-
-              {file && (
-                <div className="mt-3 text-xs text-subt">
-                  Selected: <span className="text-white">{file.name}</span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Download example – stub (no data wired yet) */}
-          <button
-            type="button"
-            className="mt-3 text-sm inline-flex items-center gap-2 text-subt hover:text-white"
-            // Hook your download action later
-            onClick={() => alert("Example download will be wired during integration")}
-          >
-            <span>⬇️</span>
-            <span>Download file example</span>
-          </button>
-
-          {/* Footer actions */}
-          <div className="mt-4 flex items-center gap-3">
-            <Link
-              href="/payments/batch"
-              className="inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-4 h-10 text-sm"
-            >
-              ← Back
-            </Link>
-
+        <div
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={onDrop}
+          className="border border-dashed border-outline/50 rounded-lg p-8 text-center"
+        >
+          <input
+            ref={inputRef}
+            type="file"
+            accept=".csv"
+            className="hidden"
+            onChange={onFileChange}
+          />
+          <div className="flex flex-col items-center gap-2">
             <button
               type="button"
-              className="inline-flex items-center gap-2 bg-[#6d44c9] rounded-lg px-4 h-10 text-sm"
-              onClick={() => alert("Review screen will be wired during integration")}
+              onClick={onPick}
+              className="inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm"
             >
-              Review →
+              📄 Browse files
             </button>
+            <div className="text-sm text-subt">or drop a file here to upload</div>
+            {fileName ? <div className="text-xs mt-1">Selected: {fileName}</div> : null}
           </div>
+        </div>
+
+        <button
+          type="button"
+          className="mt-3 text-sm inline-flex items-center gap-2 text-subt hover:text-white"
+        >
+          ⤓ Download file example
+        </button>
+
+        {/* Actions */}
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-4 h-10 text-sm"
+          >
+            ← Back
+          </button>
+          <button
+            type="button"
+            className="ml-auto inline-flex items-center gap-2 bg-[#6d44c9] rounded-lg px-5 h-10 text-sm"
+          >
+            Review →
+          </button>
         </div>
       </div>
     </AppShell>

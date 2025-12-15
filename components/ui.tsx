@@ -26,7 +26,19 @@ export function Popover({
   }, []);
   return (
     <div ref={ref} className="relative inline-block">
-      <button onClick={() => setOpen((v) => !v)}>{button({ open })}</button>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => setOpen((v) => !v)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((v) => !v);
+          }
+        }}
+      >
+        {button({ open })}
+      </div>
       {open && (
         <div
           className={clsx(

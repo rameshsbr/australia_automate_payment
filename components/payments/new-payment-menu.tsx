@@ -17,12 +17,11 @@ export default function NewPaymentMenu({ label = "+ New payment", className = ""
     <Popover
       align="right"
       button={({ open }) => (
-        <button
-          type="button"
+        <span
           className={`inline-flex items-center gap-2 bg-[#6d44c9] rounded-lg px-3 h-9 text-sm ${className}`}
         >
           {label} <span className="ml-1">{open ? "▴" : "▾"}</span>
-        </button>
+        </span>
       )}
     >
       <div className="text-sm">
