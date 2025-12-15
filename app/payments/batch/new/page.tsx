@@ -33,16 +33,8 @@ export default function NewBatchPaymentPage() {
         {/* From */}
         <div className="bg-surface rounded-lg border border-outline/30 p-3 mb-6">
           <div className="text-sm text-subt mb-1">From</div>
-          <div className="flex items-center justify-between">
-            <div>
-              <div className="font-medium">UB AdsMedia Pty Ltd</div>
-              <div className="text-subt text-sm">#6279059737797230</div>
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-subt">Available</div>
-              <div className="text-white">$0.00</div>
-            </div>
-          </div>
+          {/* intentionally empty until data is wired up; keeps layout height */}
+          <div className="h-10" aria-hidden="true" />
         </div>
 
         {/* Upload */}
@@ -70,7 +62,9 @@ export default function NewBatchPaymentPage() {
               📄 Browse files
             </button>
             <div className="text-sm text-subt">or drop a file here to upload</div>
-            {fileName ? <div className="text-xs mt-1">Selected: {fileName}</div> : null}
+            {fileName ? (
+              <div className="text-xs mt-1">Selected: {fileName}</div>
+            ) : null}
           </div>
         </div>
 
