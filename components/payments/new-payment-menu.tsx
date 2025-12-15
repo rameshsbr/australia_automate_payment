@@ -29,7 +29,7 @@ export default function NewPaymentMenu({ label = "+ New payment", className = ""
         <button onClick={go("/payments/new/single")} className="block w-full text-left px-2 py-1 rounded hover:bg-panel/60">
           Single payment
         </button>
-        <button onClick={go("/payments/new/batch")} className="block w-full text-left px-2 py-1 rounded hover:bg-panel/60">
+        <button onClick={go("/payments/batch/new")} className="block w-full text-left px-2 py-1 rounded hover:bg-panel/60">
           Batch payment
         </button>
         <button onClick={go("/payments/new/simulate")} className="block w-full text-left px-2 py-1 rounded hover:bg-panel/60">
