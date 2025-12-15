@@ -1,4 +1,5 @@
 "use client";
+import type React from "react";
 import { Popover, Toggle } from "./ui";
 import { useState } from "react";
 
@@ -52,6 +53,27 @@ export function EditColumns({
   );
 }
 
-export function FilterChip({children}:{children:React.ReactNode}) {
-  return <div className="inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm">{children}</div>;
+export function FilterChip({
+  children,
+  className = "",
+  onClick,
+  ...props
+}: React.HTMLAttributes<HTMLSpanElement>) {
+  return (
+    <span
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.(e as any);
+        }
+      }}
+      onClick={onClick}
+      className={`inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm cursor-pointer select-none ${className}`}
+      {...props}
+    >
+      {children}
+    </span>
+  );
 }
