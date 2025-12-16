@@ -37,5 +37,4 @@ Prisma Studio — how to use
 
 ⸻
 
-
 ![screenshot](https://sand-mto.moovos.com/img/dashboard.png)
