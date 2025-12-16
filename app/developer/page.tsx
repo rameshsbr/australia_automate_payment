@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useMemo } from "react";
+import { usePathname } from "next/navigation";
 
 function Kpi({ label, value }: { label: string; value: string | number }) {
   return (
@@ -21,6 +22,9 @@ export default function DevOverview() {
     []
   );
 
+  const pathname = usePathname();
+  const modePrefix = (pathname || "").startsWith("/sandbox") ? "/sandbox" : "";
+
   return (
     <>
       <div className="grid grid-cols-3 gap-3 mb-6">
@@ -31,7 +35,7 @@ export default function DevOverview() {
 
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-medium opacity-90">API history</div>
-        <Link href="/developer/api-history" className="text-sm opacity-80 hover:opacity-100">
+        <Link href={`${modePrefix}/developer/api-history`} className="text-sm opacity-80 hover:opacity-100">
           View more →
         </Link>
       </div>

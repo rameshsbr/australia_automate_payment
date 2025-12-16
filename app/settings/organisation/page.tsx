@@ -7,7 +7,7 @@ export default function OrganisationDetailsPage() {
   return (
     <AppShell>
       <div className="text-subt text-sm mb-3">
-        <Link href="/settings" className="hover:underline">
+        <Link href=".." className="hover:underline">
           ← Settings
         </Link>
       </div>

@@ -44,7 +44,7 @@ export default function UsersListPage() {
   return (
     <AppShell>
       <div className="text-subt text-sm mb-3">
-        <Link href="/settings" className="hover:underline">
+        <Link href=".." className="hover:underline">
           ← Settings
         </Link>
       </div>
@@ -52,7 +52,7 @@ export default function UsersListPage() {
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold">Users</h1>
         <Link
-          href="/settings/users/invite"
+          href="invite"
           className="bg-[#6d44c9] rounded-lg h-9 px-3 inline-flex items-center text-sm"
         >
           + Invite user
@@ -108,37 +108,15 @@ export default function UsersListPage() {
           <div />
         </div>
 
-        {filtered.length === 0 ? (
-          <div className="px-6 py-12 text-center text-subt">
-            <div className="mb-2 text-xl">👥</div>
-            <div className="font-medium text-white">No users yet</div>
-            <div className="text-sm mt-1">Invite a user to get started.</div>
-          </div>
-        ) : (
-          filtered.map((user) => (
-            <div
-              key={user.id}
-              className="grid grid-cols-[2fr,2fr,1fr,32px] items-center text-sm px-4 py-3 border-t border-outline/20"
-            >
-              {cols.name && (
-                <div>
-                  <div className="text-white">{user.name}</div>
-                  <div className="text-xs text-subt">{user.email}</div>
-                </div>
-              )}
-              {cols.roles && <div className="text-subt text-sm">{user.roles.join(", ")}</div>}
-              {cols.lastLogin && <div className="text-subt text-sm">{user.lastLogin}</div>}
-              <div className="text-right text-subt">…</div>
-            </div>
-          ))
-        )}
+        {/* empty state (no rows yet) */}
+        <div className="px-6 py-12 text-center text-subt">
+          <div className="mb-2 text-xl">👥</div>
+          <div className="font-medium text-white">No users yet</div>
+          <div className="text-sm mt-1">Invite a user to get started.</div>
+        </div>
       </div>
 
-      <div className="mt-2 text-xs text-subt">
-        {filtered.length === 0
-          ? "Showing 0 – 0 of 0"
-          : `Showing 1 – ${filtered.length} of ${filtered.length}`}
-      </div>
+      <div className="mt-2 text-xs text-subt">Showing 0 – 0 of 0</div>
     </AppShell>
   );
 }

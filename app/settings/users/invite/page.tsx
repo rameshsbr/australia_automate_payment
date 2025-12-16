@@ -7,7 +7,7 @@ export default function InviteUserPage() {
   return (
     <AppShell>
       <div className="text-subt text-sm mb-3">
-        <Link href="/settings/users" className="hover:underline">
+        <Link href=".." className="hover:underline">
           ← Users
         </Link>
       </div>
@@ -34,7 +34,7 @@ export default function InviteUserPage() {
 
         <div className="mt-6 flex items-center gap-2">
           <Link
-            href="/settings/users"
+            href=".."
             className="inline-flex items-center justify-center bg-panel border border-outline/40 rounded-lg h-9 px-4 text-sm"
           >
             Cancel
