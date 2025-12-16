@@ -9,7 +9,12 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "ts-node --compiler-options '{\"module\":\"CommonJS\"}' prisma/seed.ts",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "db:push:sandbox": "prisma db push",
+    "db:push:live": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5442/payments_dashboard_live prisma db push",
+    "studio:sandbox": "prisma studio",
+    "studio:live": "cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5442/payments_dashboard_live prisma studio",
+    "studio:both": "concurrently -n SANDBOX,LIVE -c auto \"prisma studio --port 5555\" \"cross-env DATABASE_URL=postgresql://postgres:postgres@localhost:5442/payments_dashboard_live prisma studio --port 5556\""
   },
   "dependencies": {
     "@prisma/client": "5.19.1",
@@ -23,6 +28,9 @@
   "devDependencies": {
     "@types/react": "19.2.7",
     "autoprefixer": "10.4.20",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "dotenv-cli": "^11.0.0",
     "postcss": "8.4.49",
     "prisma": "5.19.1",
     "tailwindcss": "3.4.14",

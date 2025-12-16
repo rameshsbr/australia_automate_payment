@@ -30,10 +30,10 @@ export default function SettingsIndex() {
       <h1 className="text-2xl font-semibold mb-6">Settings</h1>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Tile href="users" title="Users" icon="👤" />
-        <Tile href="payment-authorisation" title="Payment authorisation" icon="↔︎" />
-        <Tile href="organisation" title="Organisation details" icon="🏬" />
-        <Tile href="accounts" title="Accounts" icon="🏦" />
+        <Tile href="/settings/users" title="Users" icon="👤" />
+        <Tile href="/settings/payment-authorisation" title="Payment authorisation" icon="↔︎" />
+        <Tile href="/settings/organisation" title="Organisation details" icon="🏬" />
+        <Tile href="/settings/accounts" title="Accounts" icon="🏦" />
       </div>
     </>
   );

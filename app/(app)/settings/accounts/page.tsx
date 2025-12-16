@@ -3,13 +3,10 @@
 import Link from "next/link";
 
 export default function AccountsPage() {
-  // no accounts rendered yet; empty state
   return (
     <>
       <div className="text-subt text-sm mb-3">
-        <Link href=".." className="hover:underline">
-          ← Settings
-        </Link>
+        <Link href="/settings" className="hover:underline">← Settings</Link>
       </div>
 
       <h1 className="text-2xl font-semibold mb-6">Accounts</h1>

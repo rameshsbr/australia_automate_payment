@@ -6,9 +6,7 @@ export default function InviteUserPage() {
   return (
     <>
       <div className="text-subt text-sm mb-3">
-        <Link href=".." className="hover:underline">
-          ← Users
-        </Link>
+        <Link href="/settings/users" className="hover:underline">← Users</Link>
       </div>
 
       <h1 className="text-2xl font-semibold mb-6">Invite user</h1>
@@ -32,10 +30,7 @@ export default function InviteUserPage() {
         </div>
 
         <div className="mt-6 flex items-center gap-2">
-          <Link
-            href=".."
-            className="inline-flex items-center justify-center bg-panel border border-outline/40 rounded-lg h-9 px-4 text-sm"
-          >
+          <Link href="/settings/users" className="inline-flex items-center justify-center bg-panel border border-outline/40 rounded-lg h-9 px-4 text-sm">
             Cancel
           </Link>
           <button className="inline-flex items-center justify-center bg-[#6d44c9] rounded-lg h-9 px-4 text-sm">

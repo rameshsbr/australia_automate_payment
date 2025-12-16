@@ -1,5 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  experimental: { serverActions: { bodySizeLimit: "10mb" } }
+  // ...keep your current options...
+
+  async rewrites() {
+    return [
+      { source: '/sandbox/api/:path*', destination: '/api/sandbox/:path*' },
+    ];
+  },
 };
+
 export default nextConfig;

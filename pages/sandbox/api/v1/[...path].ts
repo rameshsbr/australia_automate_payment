@@ -1,8 +1,8 @@
-// file: pages/api/v1/[...path].ts
-// LIVE clone API
+// file: pages/sandbox/api/v1/[...path].ts
+// SANDBOX clone API
 
 import type { NextApiRequest, NextApiResponse } from "next";
-import { prismaLive as prisma } from "@/lib/prisma";
+import { prismaSandbox as prisma } from "@/lib/prisma";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const key = (req.headers["x-api-key"] as string) ?? "";
@@ -30,7 +30,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     headers: {
       "content-type": (req.headers["content-type"] as string) || "application/json",
       // IMPORTANT: internal proxy expects uppercase
-      cookie: "env=LIVE;",
+      cookie: "env=SANDBOX;",
     },
     body,
   });

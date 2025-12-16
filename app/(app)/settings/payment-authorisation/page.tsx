@@ -6,9 +6,7 @@ export default function PaymentAuthorisationPage() {
   return (
     <>
       <div className="text-subt text-sm mb-3">
-        <Link href=".." className="hover:underline">
-          ← Settings
-        </Link>
+        <Link href="/settings" className="hover:underline">← Settings</Link>
       </div>
 
       <h1 className="text-2xl font-semibold mb-6">Payment authorisation</h1>
@@ -30,10 +28,7 @@ export default function PaymentAuthorisationPage() {
               Selected payment types will be reviewed by users with the payment approver permission.
             </div>
           </div>
-          <div className="px-5 py-4 text-sm text-subt">
-            {/* intentionally empty – to be populated once data is available */}
-            —
-          </div>
+          <div className="px-5 py-4 text-sm text-subt">—</div>
         </div>
 
         <div className="bg-panel rounded-xl2 border border-outline/40">

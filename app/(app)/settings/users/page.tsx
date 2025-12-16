@@ -11,24 +11,12 @@ type ColumnState = {
 };
 
 export default function UsersListPage() {
-  // no data yet – empty array; wire to backend later
-  const users: Array<{
-    id: string;
-    name: string;
-    email: string;
-    roles: string[];
-    lastLogin: string;
-  }> = [];
+  const users: Array<{ id: string; name: string; email: string; roles: string[]; lastLogin: string }> = [];
 
   const [query, setQuery] = useState("");
-  const [cols, setCols] = useState<ColumnState>({
-    name: true,
-    roles: true,
-    lastLogin: true,
-  });
+  const [cols, setCols] = useState<ColumnState>({ name: true, roles: true, lastLogin: true });
 
   const filtered = useMemo(() => {
-    // keep logic but empty list will produce 0 rows
     const q = query.trim().toLowerCase();
     return q
       ? users.filter(
@@ -43,17 +31,12 @@ export default function UsersListPage() {
   return (
     <>
       <div className="text-subt text-sm mb-3">
-        <Link href=".." className="hover:underline">
-          ← Settings
-        </Link>
+        <Link href="/settings" className="hover:underline">← Settings</Link>
       </div>
 
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-semibold">Users</h1>
-        <Link
-          href="invite"
-          className="bg-[#6d44c9] rounded-lg h-9 px-3 inline-flex items-center text-sm"
-        >
+        <Link href="/settings/users/invite" className="bg-[#6d44c9] rounded-lg h-9 px-3 inline-flex items-center text-sm">
           + Invite user
         </Link>
       </div>
@@ -107,7 +90,6 @@ export default function UsersListPage() {
           <div />
         </div>
 
-        {/* empty state (no rows yet) */}
         <div className="px-6 py-12 text-center text-subt">
           <div className="mb-2 text-xl">👥</div>
           <div className="font-medium text-white">No users yet</div>
