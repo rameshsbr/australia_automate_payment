@@ -1,18 +1,44 @@
-import { AppShell } from "@/components/chrome";
-import { env } from "@/lib/env";
+"use client";
+import Link from "next/link";
+import { useMemo } from "react";
 
-export default function DevPage() {
+function Kpi({ label, value }: { label: string; value: string | number }) {
   return (
-    <AppShell>
-      <h1 className="text-2xl font-semibold mb-4">Developer</h1>
-      <div className="bg-panel rounded-xl2 p-6 border border-outline/40">
-        <div className="space-y-4 text-sm">
-          <p>Your base URL for clients (clone API): <code className="px-2 py-1 bg-surface rounded">{env.publicApiBase}</code></p>
-          <p>Auth: include header <code className="px-2 py-1 bg-surface rounded">x-api-key: &lt;your_key&gt;</code></p>
-          <p>Paths & payloads mirror the upstream provider 1:1.</p>
-          <p>Environment is determined by the assigned API key (Sandbox/Live).</p>
-        </div>
+    <div className="bg-panel border border-outline/40 rounded-xl2 p-4 flex-1">
+      <div className="text-sm text-subt mb-1">{label}</div>
+      <div className="text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+
+export default function DevOverview() {
+  const kpis = useMemo(
+    () => [
+      { label: "Total API calls", value: 0 },
+      { label: "Successes", value: 0 },
+      { label: "Errors", value: 0 },
+    ],
+    []
+  );
+
+  return (
+    <>
+      <div className="grid grid-cols-3 gap-3 mb-6">
+        {kpis.map((kpi) => (
+          <Kpi key={kpi.label} {...kpi} />
+        ))}
       </div>
-    </AppShell>
+
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-medium opacity-90">API history</div>
+        <Link href="/developer/api-history" className="text-sm opacity-80 hover:opacity-100">
+          View more →
+        </Link>
+      </div>
+
+      <div className="bg-panel border border-outline/40 rounded-xl2 p-6 text-center text-subt">
+        No recent API calls
+      </div>
+    </>
   );
 }
