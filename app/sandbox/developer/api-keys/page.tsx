@@ -1,1 +1,1 @@
-export { default } from "@/app/developer/api-keys/page";
+export { default } from "@/app/(app)/developer/api-keys/page";

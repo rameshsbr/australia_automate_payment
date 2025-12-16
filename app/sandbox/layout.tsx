@@ -1,3 +1,4 @@
+// app/sandbox/layout.tsx
 import type React from "react";
 import { AppShell } from "@/components/chrome";
 

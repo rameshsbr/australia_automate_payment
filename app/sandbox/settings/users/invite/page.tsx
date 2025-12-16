@@ -1,1 +1,1 @@
-export { default } from "@/app/settings/users/invite/page";
+export { default } from "@/app/(app)/settings/users/invite/page";

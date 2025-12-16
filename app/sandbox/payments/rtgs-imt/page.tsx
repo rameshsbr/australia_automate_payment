@@ -1,1 +1,1 @@
-export { default } from "@/app/payments/rtgs-imt/page";
+export { default } from "@/app/(app)/payments/rtgs-imt/page";
