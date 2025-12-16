@@ -3,10 +3,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
-import type React from "react";
-import { EnvToggle } from "./chrome/EnvToggle";
-
-export type Env = "live" | "sandbox";
+import ModeProvider, { useAppMode } from "@/components/mode/ModeProvider";
+import ModeToggle from "@/components/mode/ModeToggle";
 
 function NavItem({
   href,
@@ -46,18 +44,20 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ShellInner({ env, children }: { env: Env; children: React.ReactNode }) {
+function ShellInner({ children }: { children: React.ReactNode }) {
   const [paymentsOpen, setPaymentsOpen] = useState(true);
+  const mode = useAppMode();
   const path = usePathname() || "/";
   const normalizedPath = path.replace(/^\/sandbox(?=\/|$)/, "");
-  const modePrefix = env === "sandbox" ? "/sandbox" : "";
+  const modePrefix = mode === "sandbox" ? "/sandbox" : "";
 
   const searchHint = useMemo(() => {
-    const isMac = typeof navigator !== "undefined" && navigator.platform.toUpperCase().includes("MAC");
+    const isMac =
+      typeof navigator !== "undefined" && navigator.platform.toUpperCase().includes("MAC");
     return isMac ? "⌘" : "Ctrl";
   }, []);
 
-  const topOffset = env === "sandbox" ? "top-8" : "top-0";
+  const topOffset = mode === "sandbox" ? "top-8" : "top-0";
 
   return (
     <div className="flex h-screen">
@@ -110,48 +110,12 @@ function ShellInner({ env, children }: { env: Env; children: React.ReactNode }) 
         </button>
         {paymentsOpen && (
           <div className="ml-8 flex flex-col gap-1">
-            <NavItem
-              href="/payments/review"
-              label="Review payments"
-              icon="🗂️"
-              currentPath={normalizedPath}
-              modePrefix={modePrefix}
-            />
-            <NavItem
-              href="/payments/returned"
-              label="Returned payments"
-              icon="↩️"
-              currentPath={normalizedPath}
-              modePrefix={modePrefix}
-            />
-            <NavItem
-              href="/payments/batch"
-              label="Batch payments"
-              icon="🧺"
-              currentPath={normalizedPath}
-              modePrefix={modePrefix}
-            />
-            <NavItem
-              href="/payments/card"
-              label="Card payments"
-              icon="💳"
-              currentPath={normalizedPath}
-              modePrefix={modePrefix}
-            />
-            <NavItem
-              href="/payments/rtgs-imt"
-              label="RTGS/IMT payments"
-              icon="🌏"
-              currentPath={normalizedPath}
-              modePrefix={modePrefix}
-            />
-            <NavItem
-              href="/payments/payees"
-              label="Payees"
-              icon="👤"
-              currentPath={normalizedPath}
-              modePrefix={modePrefix}
-            />
+            <NavItem href="/payments/review" label="Review payments" icon="🗂️" currentPath={normalizedPath} modePrefix={modePrefix} />
+            <NavItem href="/payments/returned" label="Returned payments" icon="↩️" currentPath={normalizedPath} modePrefix={modePrefix} />
+            <NavItem href="/payments/batch" label="Batch payments" icon="🧺" currentPath={normalizedPath} modePrefix={modePrefix} />
+            <NavItem href="/payments/card" label="Card payments" icon="💳" currentPath={normalizedPath} modePrefix={modePrefix} />
+            <NavItem href="/payments/rtgs-imt" label="RTGS/IMT payments" icon="🌏" currentPath={normalizedPath} modePrefix={modePrefix} />
+            <NavItem href="/payments/payees" label="Payees" icon="👤" currentPath={normalizedPath} modePrefix={modePrefix} />
           </div>
         )}
 
@@ -170,7 +134,7 @@ function ShellInner({ env, children }: { env: Env; children: React.ReactNode }) 
       {/* Main */}
       <main className="flex-1 overflow-auto">
         {/* Purple strip */}
-        {env === "sandbox" && (
+        {mode === "sandbox" && (
           <div className="h-8 bg-[#6d44c9] flex items-center justify-center text-xs font-medium tracking-wide">
             SANDBOX MODE
           </div>
@@ -194,8 +158,8 @@ function ShellInner({ env, children }: { env: Env; children: React.ReactNode }) 
 
             {/* Right side */}
             <div className="flex items-center gap-3">
-              <div className="text-sm text-subt">{env === "sandbox" ? "Sandbox" : "Live"} mode</div>
-              <EnvToggle env={env} />
+              <div className="text-sm text-subt">{mode === "sandbox" ? "Sandbox" : "Live"} mode</div>
+              <ModeToggle />
               <div className="w-8 h-8 rounded-full bg-panel flex items-center justify-center text-xs">RS</div>
             </div>
           </div>
@@ -207,6 +171,10 @@ function ShellInner({ env, children }: { env: Env; children: React.ReactNode }) 
   );
 }
 
-export function AppShell({ env, children }: { env: Env; children: React.ReactNode }) {
-  return <ShellInner env={env}>{children}</ShellInner>;
+export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <ModeProvider>
+      <ShellInner>{children}</ShellInner>
+    </ModeProvider>
+  );
 }
