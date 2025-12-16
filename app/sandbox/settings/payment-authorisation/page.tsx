@@ -1,1 +1,1 @@
-export { default } from "@/app/settings/payment-authorisation/page";
+export { default } from "@/app/(app)/settings/payment-authorisation/page";

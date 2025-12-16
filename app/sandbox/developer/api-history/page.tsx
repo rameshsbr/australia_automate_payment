@@ -1,1 +1,1 @@
-export { default } from "@/app/developer/api-history/page";
+export { default } from "@/app/(app)/developer/api-history/page";
