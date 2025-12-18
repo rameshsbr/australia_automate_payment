@@ -1,13 +1,24 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { authHeaderForPath, monoovaConfig } from "@/lib/monoova";
 
+// simple alias to keep older URLs working
+const pathAlias = (p: string) => {
+  const clean = p.replace(/^\/+/, "");
+  if (clean === "tools/ping") return "public/v1/ping";
+  return clean;
+};
+
+type Mode = "SANDBOX" | "LIVE";
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const mode = (req.cookies["env"]?.toUpperCase() as "SANDBOX" | "LIVE") || "SANDBOX";
+  const mode = (req.cookies["env"]?.toUpperCase() as Mode) || "SANDBOX";
   const cfg = monoovaConfig(mode);
 
-  const path = (req.query.path as string[]).join("/");
+  const rawPath = ((req.query.path as string[]) || []).join("/");
+  const proxiedPath = pathAlias(rawPath);
+
   const query = req.url?.includes("?") ? `?${req.url.split("?")[1]}` : "";
-  const url = `${cfg.base}/${path}${query}`;
+  const target = `${cfg.base}/${proxiedPath}${query}`;
 
   const method = (req.method || "GET").toUpperCase();
   const body =
@@ -17,23 +28,54 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       ? req.body
       : JSON.stringify(req.body ?? {});
 
-  const auth = await authHeaderForPath(path, mode);
+  try {
+    // IMPORTANT: auth header may require an async token – always await
+    const auth = await authHeaderForPath(proxiedPath, mode);
 
-  // strip hop-by-hop headers
-  const { host, connection, "content-length": _cl, ...forward } = (req.headers as any) || {};
+    // strip hop-by-hop & sensitive headers
+    const {
+      host,
+      connection,
+      cookie,               // we decide env ourselves
+      authorization: _auth, // never forward client Authorization
+      "content-length": _cl,
+      ...forward
+    } = (req.headers as any) || {};
 
-  const upstream = await fetch(url, {
-    method,
-    headers: {
-      ...forward,
-      authorization: auth,
-      accept: forward.accept || "application/json",
-      "content-type": forward["content-type"] || "application/json",
-    },
-    body,
-  });
+    const upstream = await fetch(target, {
+      method,
+      headers: {
+        ...forward,
+        ...(auth ? { authorization: auth } : {}),
+        accept: forward.accept || "application/json",
+        "content-type": forward["content-type"] || "application/json",
+      },
+      body,
+    });
 
-  res.status(upstream.status);
-  upstream.headers.forEach((v, k) => res.setHeader(k, v));
-  res.send(await upstream.text());
+    res.status(upstream.status);
+    upstream.headers.forEach((v, k) => res.setHeader(k, v));
+    res.send(await upstream.text());
+  } catch (err: any) {
+    const c = err?.cause || {};
+    console.error("Proxy error", {
+      mode,
+      target,
+      message: err?.message,
+      code: c.code,
+      errno: c.errno,
+      syscall: c.syscall,
+      host: c.hostname,
+    });
+    res.status(502).json({
+      ok: false,
+      mode,
+      target,
+      error: err?.message || String(err),
+      code: c.code,
+      errno: c.errno,
+      syscall: c.syscall,
+      host: c.hostname,
+    });
+  }
 }
