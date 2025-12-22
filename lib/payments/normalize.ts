@@ -149,7 +149,6 @@ export function buildMonoovaPayment(input: BuildInput) {
       };
       break;
     }
-
     case "BPAY": {
       const f = input.fields as BpayFields;
       // Docs show lowercase 'bpay' in some examples; TitleCase also accepted in practice.

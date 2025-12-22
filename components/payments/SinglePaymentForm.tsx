@@ -154,7 +154,7 @@ export default function SinglePaymentForm() {
           <select
             className={cx}
             value={form.rail}
-            onChange={(e) => setForm((prev) => ({ ...prev, rail: e.target.value as Rail }))}
+            onChange={(e) => setForm((prev) => ({ ...prev, rail: e.target.value as RailKey }))}
           >
             {PAYMENT_RAILS.map((o) => (
               <option key={o.id} value={o.id}>
