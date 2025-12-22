@@ -1,17 +1,17 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { normalizeToMonoovaPayload, type RailKey } from "@/lib/payments/normalize";
+import { buildMonoovaPayment, type Rail } from "@/lib/payments/normalize";
 
 type FormState = {
-  rail: RailKey;
+  rail: Rail;
   amount: string;
   currency: string;
   bsb: string;
   accountNumber: string;
   accountName: string;
   lodgementReference: string;
-  payIdType: "Email" | "Mobile" | "ABN" | "OrganisationId" | "Username";
+  payIdType: "Email" | "Phone" | "ABN" | "OrganisationId";
   token: string;
   billerCode: string;
   crn: string;
@@ -23,41 +23,40 @@ type FormState = {
 
 type RailFieldGroup = "deBank" | "token" | "payId" | "bpay" | "child";
 
-const PAYMENT_RAILS: { id: RailKey; label: string }[] = [
-  { id: "DE_DIRECT_CREDIT", label: "Direct Credit (DE)" },
-  { id: "DE_DIRECT_CREDIT_TOKEN", label: "Direct Credit (Token)" },
-  { id: "DE_DIRECT_DEBIT_TOKEN", label: "Direct Debit (Token)" },
+const PAYMENT_RAILS: { id: Rail; label: string }[] = [
+  { id: "DIRECT_CREDIT_DE", label: "Direct Credit (DE)" },
+  { id: "DIRECT_CREDIT_TOKEN", label: "Direct Credit (Token)" },
+  { id: "DIRECT_DEBIT_TOKEN", label: "Direct Debit (Token)" },
   { id: "NPP_BANK", label: "NPP – Bank Account" },
   { id: "NPP_PAYID", label: "NPP – PayID" },
   { id: "BPAY", label: "BPAY" },
-  { id: "PAY_CHILD", label: "Pay Child mAccount" },
-  { id: "DEBIT_CHILD", label: "Debit Child mAccount" },
+  { id: "PAY_CHILD_MACCOUNT", label: "Pay Child mAccount" },
+  { id: "DEBIT_CHILD_MACCOUNT", label: "Debit Child mAccount" },
 ];
 
-const RAIL_FIELD_GROUPS: Record<RailKey, RailFieldGroup[]> = {
-  DE_DIRECT_CREDIT: ["deBank"],
-  DE_DIRECT_CREDIT_TOKEN: ["token"],
-  DE_DIRECT_DEBIT_TOKEN: ["token"],
+const RAIL_FIELD_GROUPS: Record<Rail, RailFieldGroup[]> = {
+  DIRECT_CREDIT_DE: ["deBank"],
+  DIRECT_CREDIT_TOKEN: ["token"],
+  DIRECT_DEBIT_TOKEN: ["token"],
   NPP_BANK: ["deBank"],
   NPP_PAYID: ["payId"],
   BPAY: ["bpay"],
-  PAY_CHILD: ["child"],
-  DEBIT_CHILD: ["child"],
+  PAY_CHILD_MACCOUNT: ["child"],
+  DEBIT_CHILD_MACCOUNT: ["child"],
 };
 
 const PAYID_TYPES: { id: FormState["payIdType"]; label: string }[] = [
   { id: "Email", label: "Email" },
-  { id: "Mobile", label: "Mobile" },
+  { id: "Phone", label: "Phone" },
   { id: "ABN", label: "ABN" },
   { id: "OrganisationId", label: "Organisation ID" },
-  { id: "Username", label: "Username" },
 ];
 
 type Result = string | null;
 
 export default function SinglePaymentForm() {
   const [form, setForm] = useState<FormState>(() => ({
-    rail: "DE_DIRECT_CREDIT",
+    rail: "DIRECT_CREDIT_DE",
     amount: "1.00",
     currency: "AUD",
     bsb: "062000",
@@ -92,23 +91,41 @@ export default function SinglePaymentForm() {
       setSubmitting(path.includes("validate") ? "validate" : "execute");
       setResult(null);
 
-      const payload = normalizeToMonoovaPayload({
-        callerUniqueReference: form.callerUniqueReference,
-        sourceType: "mAccount",
+      const fields =
+        form.rail === "DIRECT_CREDIT_DE" || form.rail === "NPP_BANK"
+          ? {
+              bsb: form.bsb,
+              accountNumber: form.accountNumber,
+              accountName: form.accountName,
+              lodgementReference: form.lodgementReference,
+            }
+          : form.rail === "DIRECT_CREDIT_TOKEN" || form.rail === "DIRECT_DEBIT_TOKEN"
+            ? { token: form.token, lodgementReference: form.lodgementReference }
+            : form.rail === "NPP_PAYID"
+              ? {
+                  payId: form.payId,
+                  payIdType: form.payIdType,
+                  remitterName: form.accountName,
+                  lodgementReference: form.lodgementReference,
+                }
+              : form.rail === "BPAY"
+                ? {
+                    billerCode: form.billerCode,
+                    crn: form.crn,
+                    billerName: form.billerName,
+                  }
+                : {
+                    mAccountNumber: form.childMaccountNumber,
+                    lodgementReference: form.lodgementReference,
+                  };
+
+      const payload = buildMonoovaPayment({
+        rail: form.rail,
         amount: form.amount,
         currency: form.currency as "AUD",
-        rail: form.rail,
-        lodgementReference: form.lodgementReference,
-        accountName: form.accountName,
-        bsbNumber: form.bsb,
-        accountNumber: form.accountNumber,
-        payId: form.payId,
-        payIdType: form.payIdType,
-        token: form.token,
-        billerCode: form.billerCode,
-        crn: form.crn,
-        billerName: form.billerName,
-        mAccountNumber: form.childMaccountNumber,
+        callerUniqueReference: form.callerUniqueReference,
+        source: { type: "mAccount" },
+        fields,
       });
 
       const res = await fetch(path, {
