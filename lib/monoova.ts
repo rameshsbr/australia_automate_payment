@@ -1,53 +1,64 @@
-// file: lib/monoova.ts
-// Monoova Payments Platform auth helpers (Basic only)
-
+// Helper utilities for Monoova authentication and routing
 export type Mode = "SANDBOX" | "LIVE";
 
-type MonoovaCfg = {
+export type MonoovaCfg = {
   base: string;
-  apiKey?: string;    // API key (preferred)
-  mAccount?: string;  // optional fallback if you really must
+  apiKey: string;
+  mAccount: string;
 };
 
-function req(name: string, val?: string) {
-  if (!val || !val.trim()) throw new Error(`Missing env: ${name}`);
-  return val.trim();
-}
+export const monoovaConfig = (mode: Mode): MonoovaCfg => ({
+  base: mode === "LIVE" ? process.env.LIVE_API_BASE! : process.env.SANDBOX_API_BASE!,
+  apiKey: mode === "LIVE" ? process.env.LIVE_API_KEY! : process.env.SANDBOX_API_KEY!,
+  mAccount: mode === "LIVE" ? process.env.LIVE_MACCOUNT! : process.env.SANDBOX_MACCOUNT!,
+});
 
-export function monoovaConfig(mode: Mode): MonoovaCfg {
-  if (mode === "LIVE") {
-    return {
-      base: req("LIVE_API_BASE", process.env.LIVE_API_BASE),       // e.g. https://api.mpay.com.au
-      apiKey: (process.env.LIVE_API_KEY || "").trim(),
-      mAccount: (process.env.LIVE_MACCOUNT || "").trim(),
-    };
-  }
-  // SANDBOX (default)
-  return {
-    base: req("SANDBOX_API_BASE", process.env.SANDBOX_API_BASE),   // e.g. https://api.m-pay.com.au
-    apiKey: (process.env.SANDBOX_API_KEY || "").trim(),
-    mAccount: (process.env.SANDBOX_MACCOUNT || "").trim(),
-  };
-}
+export const basicForApiKey = (apiKey: string) =>
+  "Basic " + Buffer.from(`${apiKey}:`).toString("base64");
 
-function basic(username: string) {
-  return "Basic " + Buffer.from(`${username}:`).toString("base64");
-}
+export const basicForTokenEndpoint = (mAccount: string, apiKey: string) =>
+  "Basic " + Buffer.from(`${mAccount}:${apiKey}`).toString("base64");
 
-/**
- * Return the Authorization header for a Monoova path.
- * - No auth for `public/*`
- * - Basic auth otherwise (username = API key; blank password)
- */
-export async function authHeaderForPath(
-  path: string,
-  mode: Mode
-): Promise<string | undefined> {
-  const clean = (path || "").replace(/^\/+/, "");
-  if (clean.startsWith("public/")) return undefined;
+// naive in-memory token cache
+const tokenCache: Record<Mode, { token: string; exp: number } | undefined> = {
+  SANDBOX: undefined,
+  LIVE: undefined,
+};
+
+const TOKEN_PATH = process.env.MONOOVA_TOKEN_PATH || "authorisation/token";
+
+export async function getBearerToken(mode: Mode): Promise<string> {
+  const now = Date.now();
+  const cached = tokenCache[mode];
+  if (cached && cached.exp > now + 15_000) return cached.token;
 
   const cfg = monoovaConfig(mode);
-  const user = (cfg.apiKey && cfg.apiKey.trim()) || (cfg.mAccount && cfg.mAccount.trim()) || "";
-  if (!user) throw new Error("No API key configured for Monoova");
-  return basic(user);
+  const res = await fetch(`${cfg.base}/${TOKEN_PATH}`, {
+    method: "POST",
+    headers: {
+      Authorization: basicForTokenEndpoint(cfg.mAccount, cfg.apiKey),
+      "content-type": "application/json",
+      accept: "application/json",
+    },
+    body: JSON.stringify({ grant_type: "client_credentials" }),
+  });
+  if (!res.ok) throw new Error(`Token fetch failed (${res.status})`);
+  const data = await res.json();
+  const token = data.access_token || data.token || "";
+  const ttlMs = (data.expires_in ? Number(data.expires_in) : 1800) * 1000;
+  tokenCache[mode] = { token, exp: now + Math.max(60_000, ttlMs - 60_000) };
+  return token;
+}
+
+// choose proper Authorization header per path
+export async function authHeaderForPath(path: string, mode: Mode): Promise<string> {
+  const cfg = monoovaConfig(mode);
+  if (path.startsWith("payto") || path.startsWith("cards")) {
+    const token = await getBearerToken(mode);
+    return `Bearer ${token}`;
+  }
+  if (path.startsWith("authorisation") || path.startsWith("authorization")) {
+    return basicForTokenEndpoint(cfg.mAccount, cfg.apiKey);
+  }
+  return basicForApiKey(cfg.apiKey);
 }
