@@ -1,335 +1,220 @@
 "use client";
 
-import { ComponentType, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Popover } from "@/components/ui";
+import { useState, type ReactNode } from "react";
+import { format } from "date-fns";
+import type { DateRange } from "react-day-picker";
+import { DateRangePicker } from "@/components/date-range";
+import { cn } from "@/components/ui";
 
-type ColKey =
-  | "date"
-  | "description"
-  | "debit"
-  | "credit"
-  | "balance"
-  | "reference"
-  | "transactionId"
-  | "identifier";
-
-const allColumns: Record<ColKey, string> = {
-  date: "Date",
-  description: "Description",
-  debit: "Debit",
-  credit: "Credit",
-  balance: "Balance",
-  reference: "Reference",
-  transactionId: "Transaction ID",
-  identifier: "Identifier",
-};
-
-const typeOptions = [
-  "Direct Debit",
-  "Direct Credit",
-  "NPP Direct Credit",
-  "BPay Out",
-  "NPP Receivable",
-  "DE Receivable",
-  "DE Direct Debit",
-  "BPay Receivable",
-] as const;
-
-type TxType = (typeof typeOptions)[number];
-
-function monthDays(year: number, monthIndex: number) {
-  const first = new Date(year, monthIndex, 1);
-  const last = new Date(year, monthIndex + 1, 0).getDate();
-  const prefix = first.getDay();
-  const days = Array(prefix).fill(null).concat([...Array(last)].map((_, i) => i + 1));
-  while (days.length % 7) days.push(null);
-  while (days.length < 42) days.push(null);
-  return days;
-}
+type ApiResult = any;
 
 export default function TransactionsPage() {
-  const data: any[] = [];
-  const [q, setQ] = useState("");
-  const [preset, setPreset] = useState<"Last 7 days" | "Custom">("Last 7 days");
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth());
-  const [start, setStart] = useState<Date | null>(null);
-  const [end, setEnd] = useState<Date | null>(null);
-  const [pickedTypes, setPickedTypes] = useState<TxType[]>([]);
-  const [cols, setCols] = useState<Record<ColKey, boolean>>({
-    date: true,
-    description: true,
-    debit: true,
-    credit: true,
-    balance: true,
-    reference: false,
-    transactionId: false,
-    identifier: false,
-  });
-  const [NewPaymentMenu, setNewPaymentMenu] = useState<ComponentType | null>(null);
-  const pathname = usePathname() || "/";
-  const envPrefix = useMemo(() => (pathname.startsWith("/sandbox") ? "/sandbox" : ""), [pathname]);
-
-  useEffect(() => {
-    let mounted = true;
-    import("@/components/payments/new-payment-menu")
-      .then((mod) => {
-        if (mounted) setNewPaymentMenu(() => mod.default);
-      })
-      .catch(() => {
-        if (mounted) setNewPaymentMenu(null);
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  function toggleType(t: TxType) {
-    setPickedTypes((cur) => (cur.includes(t) ? cur.filter((x) => x !== t) : [...cur, t]));
-  }
-
-  function resetFilters() {
-    setPreset("Last 7 days");
-    setPickedTypes([]);
-    setStart(null);
-    setEnd(null);
-    setYear(today.getFullYear());
-    setMonth(today.getMonth());
-  }
-
-  const shownColumns = useMemo(
-    () => (Object.keys(allColumns) as ColKey[]).filter((k) => cols[k]),
-    [cols]
-  );
-
-  function NewPaymentButton() {
-    if (NewPaymentMenu) return <NewPaymentMenu />;
-    return (
-      <Link
-        href={`${envPrefix}/payments/new/single`}
-        className="bg-[#6d44c9] rounded-lg h-9 px-3 inline-flex items-center text-sm"
-      >
-        + New payment
-      </Link>
-    );
-  }
-
-  const days = monthDays(year, month);
+  const [active, setActive] = useState<"uid" | "date" | "uncleared">("uid");
 
   return (
-    <>
-      <h1 className="text-2xl font-semibold mb-6">Transactions</h1>
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Transactions</h1>
 
-      <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="flex-1">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search transactions..."
-            className="w-full bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm placeholder:text-subt/70"
-          />
-        </div>
+      <div className="flex gap-2">
+        <TabButton onClick={() => setActive("uid")} active={active === "uid"}>
+          Lookup by Unique Reference
+        </TabButton>
+        <TabButton onClick={() => setActive("date")} active={active === "date"}>
+          Status by Date
+        </TabButton>
+        <TabButton onClick={() => setActive("uncleared")} active={active === "uncleared"}>
+          Uncleared by Date
+        </TabButton>
+      </div>
 
-        <Popover
-          button={() => (
-            <button className="ml-3 inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm">
-              Date
-              <span className="text-subt">
-                {preset === "Custom" && start && end
-                  ? `${start.toISOString().slice(0, 10)} to ${end.toISOString().slice(0, 10)}`
-                  : "Last 7 days"}
-              </span>
-            </button>
-          )}
-          align="start"
-          className="w-[320px]"
-        >
-          <div className="text-sm">
-            <div className="mb-2">
-              <label className="text-subt block mb-1">Filter by Date</label>
-              <select
-                value={preset}
-                onChange={(e) => setPreset(e.target.value as any)}
-                className="w-full h-9 bg-surface border border-outline/40 rounded-lg px-2 text-sm"
-              >
-                <option>Last 7 days</option>
-                <option>Custom</option>
-              </select>
-            </div>
+      {active === "uid" && <StatusByUid />}
+      {active === "date" && <StatusByDate />}
+      {active === "uncleared" && <UnclearedByDate />}
+    </div>
+  );
+}
 
-            {preset === "Custom" && (
-              <div className="bg-panel border border-outline/40 rounded-lg p-3">
-                <div className="flex items-center gap-2 mb-3">
-                  <select
-                    value={month}
-                    onChange={(e) => setMonth(parseInt(e.target.value, 10))}
-                    className="flex-1 h-9 bg-surface border border-outline/40 rounded-lg px-2"
-                  >
-                    {["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"].map((m, i) => (
-                      <option key={m} value={i}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={year}
-                    onChange={(e) => setYear(parseInt(e.target.value, 10))}
-                    className="w-[110px] h-9 bg-surface border border-outline/40 rounded-lg px-2"
-                  >
-                    {Array.from({ length: 7 }).map((_, i) => {
-                      const y = today.getFullYear() - 3 + i;
-                      return (
-                        <option key={y} value={y}>
-                          {y}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </div>
+function TabButton({
+  active,
+  children,
+  onClick,
+}: {
+  active: boolean;
+  children: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "px-3 py-2 rounded-md border text-sm",
+        active ? "bg-black text-white" : "bg-white"
+      )}
+    >
+      {children}
+    </button>
+  );
+}
 
-                <div className="grid grid-cols-7 gap-1 text-xs text-subt mb-2">
-                  {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-                    <div key={d} className="text-center">
-                      {d}
-                    </div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1">
-                  {days.map((d, i) => (
-                    <button
-                      key={i}
-                      disabled={!d}
-                      onClick={() => {
-                        const picked = new Date(year, month, Number(d));
-                        if (!start || (start && end)) {
-                          setStart(picked);
-                          setEnd(null);
-                        } else if (picked < start) {
-                          setEnd(start);
-                          setStart(picked);
-                        } else {
-                          setEnd(picked);
-                        }
-                      }}
-                      className={`h-8 rounded text-sm ${
-                        d
-                          ? "bg-surface border border-outline/40 hover:bg-surface/80"
-                          : "bg-transparent"
-                      }`}
-                    >
-                      {d ?? ""}
-                    </button>
-                  ))}
-                </div>
+function StatusByUid() {
+  const [uid, setUid] = useState("");
+  const [result, setResult] = useState<ApiResult | null>(null);
+  const [loading, setLoading] = useState(false);
 
-                <button className="mt-3 w-full h-9 rounded bg-[#6d44c9] text-sm">Apply</button>
-              </div>
-            )}
-          </div>
-        </Popover>
+  async function go() {
+    if (!uid.trim()) return;
+    setLoading(true);
+    setResult(null);
+    const r = await fetch(
+      `/api/internal/transactions/status-by-uid?uid=${encodeURIComponent(uid)}`,
+      { cache: "no-store" }
+    );
+    const j = await r.json();
+    setResult(j);
+    setLoading(false);
+  }
 
-        <Popover
-          button={() => (
-            <button className="ml-2 inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm">
-              Type
-            </button>
-          )}
-          align="start"
-          className="w-[320px]"
-        >
-          <div className="text-sm">
-            <div className="text-subt mb-2">Filter by Type</div>
-            <div className="max-h-64 overflow-auto space-y-2 pr-1">
-              {typeOptions.map((t) => (
-                <label key={t} className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    checked={pickedTypes.includes(t)}
-                    onChange={() => toggleType(t)}
-                  />
-                  <span>{t}</span>
-                </label>
-              ))}
-            </div>
-            <button className="mt-3 w-full h-9 rounded bg-[#6d44c9] text-sm">Apply</button>
-          </div>
-        </Popover>
-
-        <button className="ml-2 inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm">
-          + Add filter
-        </button>
-
+  return (
+    <section className="space-y-3">
+      <div className="flex gap-2">
+        <input
+          className="border rounded px-3 py-2 w-[420px]"
+          placeholder="Enter uniqueReference / callerUniqueReference"
+          value={uid}
+          onChange={(e) => setUid(e.target.value)}
+        />
         <button
-          onClick={resetFilters}
-          className="ml-2 inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm"
+          onClick={go}
+          className="px-4 py-2 rounded bg-black text-white disabled:opacity-50"
+          disabled={loading}
         >
-          Reset filters
+          {loading ? "Loading…" : "Lookup"}
         </button>
+      </div>
+      <JsonPanel data={result} />
+    </section>
+  );
+}
 
-        <div className="flex-1" />
+function StatusByDate() {
+  const [range, setRange] = useState<DateRange | undefined>({
+    from: new Date(),
+    to: new Date(),
+  });
+  const [pageNumber, setPageNumber] = useState(1);
+  const [pageSize, setPageSize] = useState(100);
+  const [result, setResult] = useState<ApiResult | null>(null);
+  const [loading, setLoading] = useState(false);
 
-        <Popover
-          button={() => (
-            <button className="inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm">
-              ⚙️ Edit columns
-            </button>
-          )}
-          align="end"
-          className="w-[260px]"
+  async function go() {
+    if (!range?.from) return;
+    setLoading(true);
+    setResult(null);
+
+    const params = new URLSearchParams();
+    if (range?.from && range?.to && range.from.getTime() !== range.to.getTime()) {
+      params.set("from", format(range.from, "yyyy-MM-dd"));
+      params.set("to", format(range.to, "yyyy-MM-dd"));
+    } else {
+      params.set("date", format(range.from, "yyyy-MM-dd"));
+    }
+    params.set("pageNumber", String(pageNumber));
+    params.set("pageSize", String(pageSize));
+
+    const r = await fetch(
+      `/api/internal/transactions/status-by-date?${params.toString()}`,
+      { cache: "no-store" }
+    );
+    const j = await r.json();
+    setResult(j);
+    setLoading(false);
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <DateRangePicker value={range} onChange={setRange} />
+        <label className="flex items-center gap-2 text-sm">
+          Page
+          <input
+            type="number"
+            className="border rounded px-3 py-2 w-28"
+            value={pageNumber}
+            onChange={(e) => setPageNumber(Number(e.target.value || 1))}
+          />
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          Page size
+          <input
+            type="number"
+            className="border rounded px-3 py-2 w-28"
+            value={pageSize}
+            onChange={(e) => setPageSize(Number(e.target.value || 100))}
+          />
+        </label>
+        <button
+          onClick={go}
+          className="px-4 py-2 rounded bg-black text-white disabled:opacity-50"
+          disabled={loading}
         >
-          <div className="text-sm space-y-2">
-            {(Object.keys(allColumns) as ColKey[]).map((k) => (
-              <label key={k} className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={cols[k]}
-                  onChange={() => setCols((c) => ({ ...c, [k]: !c[k] }))}
-                />
-                <span>{allColumns[k]}</span>
-              </label>
-            ))}
-          </div>
-        </Popover>
-
-        <button className="ml-2 inline-flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 h-9 text-sm">
-          ⬇️ Export
+          {loading ? "Loading…" : "Fetch"}
         </button>
-
-        <div className="ml-2">
-          <NewPaymentButton />
-        </div>
       </div>
+      <JsonPanel data={result} />
+    </section>
+  );
+}
 
-      <div className="bg-panel rounded-xl2 border border-outline/40 overflow-hidden">
-        <div
-          className="grid px-4 py-2 text-xs text-subt border-b border-outline/30"
-          style={{ gridTemplateColumns: `repeat(${shownColumns.length}, minmax(0, 1fr))` }}
+function UnclearedByDate() {
+  const [range, setRange] = useState<DateRange | undefined>({
+    from: new Date(),
+    to: new Date(),
+  });
+  const [result, setResult] = useState<ApiResult | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function go() {
+    if (!range?.from) return;
+    setLoading(true);
+    setResult(null);
+    const params = new URLSearchParams();
+    if (range?.from && range?.to && range.from.getTime() !== range.to.getTime()) {
+      params.set("from", format(range.from, "yyyy-MM-dd"));
+      params.set("to", format(range.to, "yyyy-MM-dd"));
+    } else {
+      params.set("date", format(range.from, "yyyy-MM-dd"));
+    }
+    const r = await fetch(
+      `/api/internal/transactions/uncleared-by-date?${params.toString()}`,
+      { cache: "no-store" }
+    );
+    const j = await r.json();
+    setResult(j);
+    setLoading(false);
+  }
+
+  return (
+    <section className="space-y-3">
+      <div className="flex items-center gap-3">
+        <DateRangePicker value={range} onChange={setRange} />
+        <button
+          onClick={go}
+          className="px-4 py-2 rounded bg-black text-white disabled:opacity-50"
+          disabled={loading}
         >
-          {shownColumns.map((k) => (
-            <div key={k} className="uppercase tracking-wide">
-              {allColumns[k]}
-            </div>
-          ))}
-        </div>
-
-        {data.length === 0 ? (
-          <div className="px-6 py-16 text-center">
-            <div className="text-2xl mb-2">↔︎</div>
-            <div className="text-white font-medium">No transactions found</div>
-            <div className="text-subt text-sm mt-1">
-              Try changing the filters or creating a new payment.
-            </div>
-            <div className="mt-4">
-              <NewPaymentButton />
-            </div>
-          </div>
-        ) : (
-          <div className="divide-y divide-outline/20"></div>
-        )}
+          {loading ? "Loading…" : "Fetch"}
+        </button>
       </div>
-    </>
+      <JsonPanel data={result} />
+    </section>
+  );
+}
+
+function JsonPanel({ data }: { data: any }) {
+  if (!data) return null;
+  return (
+    <pre className="bg-neutral-50 border rounded p-3 text-xs overflow-auto max-h-[60vh]">
+      {JSON.stringify(data, null, 2)}
+    </pre>
   );
 }
