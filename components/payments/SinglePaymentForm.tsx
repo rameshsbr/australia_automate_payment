@@ -4,7 +4,7 @@ import { useState } from "react";
 import {
   PAYMENT_RAILS,
   RAIL_FIELD_GROUPS,
-  normalizeSinglePayment,
+  buildMonoovaPayment,
   type Rail,
 } from "@/lib/payments/normalize";
 
@@ -12,7 +12,7 @@ type Result = { ok: boolean; json: any } | null;
 
 export default function SinglePaymentForm() {
   const [form, setForm] = useState({
-    rail: "de" as Rail,
+    rail: "Direct Credit (DE)" as Rail,
     amount: "1.00",
     currency: "AUD",
     bsb: "062000",
@@ -24,6 +24,7 @@ export default function SinglePaymentForm() {
     billerCode: "",
     crn: "",
     mAccountNumber: "",
+    payId: "",
   });
   const [submitting, setSubmitting] = useState<"validate" | "execute" | null>(null);
   const [result, setResult] = useState<Result>(null);
@@ -34,22 +35,39 @@ export default function SinglePaymentForm() {
     try {
       setSubmitting(kind);
       setResult(null);
-      const body = normalizeSinglePayment({
+      const callerUniqueReference =
+        globalThis.crypto?.randomUUID?.() || `ui-${Date.now()}`;
+      const body = buildMonoovaPayment({
         rail: form.rail,
         amount: form.amount,
         currency: form.currency,
-        bsb: form.bsb,
-        accountNumber: form.accountNumber,
-        accountName: form.accountName,
-        lodgementReference: form.lodgementReference,
-        payId: form.payId,
-        payIdType: form.payIdType,
-        remitterName: form.accountName,
-        storedToken: form.storedToken,
-        billerCode: form.billerCode,
-        crn: form.crn,
-        billerName: form.accountName,
-        mAccountNumber: form.mAccountNumber,
+        reference: form.lodgementReference,
+        callerUniqueReference,
+        source: { type: "mAccount" },
+        fields:
+          form.rail === "Direct Credit (DE)" || form.rail === "NPP – Bank Account"
+            ? {
+                bsb: form.bsb,
+                accountNumber: form.accountNumber,
+                accountName: form.accountName,
+              }
+            : form.rail === "NPP – PayID"
+            ? {
+                payId: form.payId,
+                payIdType: form.payIdType,
+                remitterName: form.accountName,
+              }
+            : form.rail === "BPAY"
+            ? {
+                billerCode: form.billerCode,
+                crn: form.crn,
+                billerName: form.accountName,
+              }
+            : form.rail === "Direct Credit (Token)" || form.rail === "Direct Debit (Token)"
+            ? { token: form.storedToken }
+            : {
+                mAccountNumber: form.mAccountNumber,
+              },
       });
       const res = await fetch(`/api/internal/payments/${kind}`, {
         method: "POST",
