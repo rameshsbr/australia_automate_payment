@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import clsx, { type ClassValue } from "clsx";
 
 export function cn(...inputs: ClassValue[]) {
@@ -11,23 +11,46 @@ export function Popover({
   button,
   className,
   children,
-  align = "left"
+  align = "left",
+  open: controlledOpen,
+  onOpenChange
 }: {
   button: (args: { open: boolean }) => ReactNode;
   className?: string;
-  children: ReactNode;
+  children: ReactNode | ((args: { close: () => void }) => ReactNode);
   align?: "left" | "right";
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const isControlled = typeof controlledOpen === "boolean";
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (!isControlled) setUncontrolledOpen(next);
+      onOpenChange?.(next);
+    },
+    [isControlled, onOpenChange]
+  );
+
   useEffect(() => {
     const onDoc = (e: MouseEvent) => {
       if (!ref.current) return;
       if (!ref.current.contains(e.target as Node)) setOpen(false);
     };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, []);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [ref, setOpen]);
+
   return (
     <div ref={ref} className="relative inline-block">
       <div
@@ -51,7 +74,7 @@ export function Popover({
             className
           )}
         >
-          {children}
+          {typeof children === "function" ? children({ close: () => setOpen(false) }) : children}
         </div>
       )}
     </div>
