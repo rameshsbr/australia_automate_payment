@@ -10,39 +10,36 @@ type FormState = {
   bsb: string;
   accountNumber: string;
   accountName: string;
+  payIdAccountName: string;
   lodgementReference: string;
   payIdType: "Email" | "Phone" | "ABN" | "OrganisationId";
   token: string;
   billerCode: string;
   crn: string;
   billerName: string;
-  childMaccountNumber: string;
   payId: string;
   callerUniqueReference: string;
+  sourceType: "mAccount" | "mWallet";
+  mWalletId: string;
+  mWalletPin: string;
 };
 
-type RailFieldGroup = "deBank" | "token" | "payId" | "bpay" | "child";
+type RailFieldGroup = "deBank" | "token" | "payId" | "bpay";
 
 const PAYMENT_RAILS: { id: Rail; label: string }[] = [
   { id: "DIRECT_CREDIT_DE", label: "Direct Credit (DE)" },
   { id: "DIRECT_CREDIT_TOKEN", label: "Direct Credit (Token)" },
-  { id: "DIRECT_DEBIT_TOKEN", label: "Direct Debit (Token)" },
   { id: "NPP_BANK", label: "NPP – Bank Account" },
   { id: "NPP_PAYID", label: "NPP – PayID" },
   { id: "BPAY", label: "BPAY" },
-  { id: "PAY_CHILD_MACCOUNT", label: "Pay Child mAccount" },
-  { id: "DEBIT_CHILD_MACCOUNT", label: "Debit Child mAccount" },
 ];
 
 const RAIL_FIELD_GROUPS: Record<Rail, RailFieldGroup[]> = {
   DIRECT_CREDIT_DE: ["deBank"],
   DIRECT_CREDIT_TOKEN: ["token"],
-  DIRECT_DEBIT_TOKEN: ["token"],
   NPP_BANK: ["deBank"],
   NPP_PAYID: ["payId"],
   BPAY: ["bpay"],
-  PAY_CHILD_MACCOUNT: ["child"],
-  DEBIT_CHILD_MACCOUNT: ["child"],
 };
 
 const PAYID_TYPES: { id: FormState["payIdType"]; label: string }[] = [
@@ -62,14 +59,17 @@ export default function SinglePaymentForm() {
     bsb: "062000",
     accountNumber: "12345678",
     accountName: "Demo",
+    payIdAccountName: "Demo Recipient",
     lodgementReference: "Test",
     payIdType: "Email",
     token: "",
     billerCode: "",
     crn: "",
     billerName: "",
-    childMaccountNumber: "",
     payId: "",
+    sourceType: "mAccount",
+    mWalletId: "",
+    mWalletPin: "",
     callerUniqueReference: globalThis.crypto?.randomUUID?.() || `ui-${Date.now()}`,
   }));
   const [submitting, setSubmitting] = useState<"validate" | "execute" | null>(null);
@@ -99,32 +99,33 @@ export default function SinglePaymentForm() {
               accountName: form.accountName,
               lodgementReference: form.lodgementReference,
             }
-          : form.rail === "DIRECT_CREDIT_TOKEN" || form.rail === "DIRECT_DEBIT_TOKEN"
+          : form.rail === "DIRECT_CREDIT_TOKEN"
             ? { token: form.token, lodgementReference: form.lodgementReference }
             : form.rail === "NPP_PAYID"
               ? {
                   payId: form.payId,
                   payIdType: form.payIdType,
-                  remitterName: form.accountName,
+                  accountName: form.payIdAccountName,
+                  remitterName: form.payIdAccountName,
                   lodgementReference: form.lodgementReference,
                 }
-              : form.rail === "BPAY"
-                ? {
-                    billerCode: form.billerCode,
-                    crn: form.crn,
-                    billerName: form.billerName,
-                  }
-                : {
-                    mAccountNumber: form.childMaccountNumber,
-                    lodgementReference: form.lodgementReference,
-                  };
+              : {
+                  billerCode: form.billerCode,
+                  crnOrReferenceNumber: form.crn,
+                  billerName: form.billerName,
+                };
+
+      const source =
+        form.rail === "BPAY" && form.sourceType === "mWallet"
+          ? { type: "mWallet" as const, mWalletId: form.mWalletId, pin: form.mWalletPin }
+          : { type: "mAccount" as const };
 
       const payload = buildMonoovaPayment({
         rail: form.rail,
         amount: form.amount,
         currency: form.currency as "AUD",
         callerUniqueReference: form.callerUniqueReference,
-        source: { type: "mAccount" },
+        source,
         fields,
       });
 
@@ -154,7 +155,13 @@ export default function SinglePaymentForm() {
           <select
             className={cx}
             value={form.rail}
-            onChange={(e) => setForm((prev) => ({ ...prev, rail: e.target.value as RailKey }))}
+            onChange={(e) =>
+              setForm((prev) => ({
+                ...prev,
+                rail: e.target.value as Rail,
+                sourceType: e.target.value === "BPAY" ? "mWallet" : "mAccount",
+              }))
+            }
           >
             {PAYMENT_RAILS.map((o) => (
               <option key={o.id} value={o.id}>
@@ -269,11 +276,11 @@ export default function SinglePaymentForm() {
             </select>
           </div>
           <div>
-            <label className={label}>Remitter name</label>
+            <label className={label}>Account name (required)</label>
             <input
               className={cx}
-              value={form.accountName || ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, accountName: e.target.value }))}
+              value={form.payIdAccountName || ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, payIdAccountName: e.target.value }))}
             />
           </div>
           <div>
@@ -289,6 +296,50 @@ export default function SinglePaymentForm() {
 
       {groups.includes("bpay") && (
         <div className={row}>
+          <div className="md:col-span-2 flex items-center gap-4">
+            <label className={label + " mb-0"}>Source</label>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="bpay-source"
+                value="mAccount"
+                checked={form.sourceType === "mAccount"}
+                onChange={() => setForm((prev) => ({ ...prev, sourceType: "mAccount" }))}
+              />
+              mAccount (not allowed for BPAY)
+            </label>
+            <label className="inline-flex items-center gap-2 text-sm">
+              <input
+                type="radio"
+                name="bpay-source"
+                value="mWallet"
+                checked={form.sourceType === "mWallet"}
+                onChange={() => setForm((prev) => ({ ...prev, sourceType: "mWallet" }))}
+              />
+              mWallet (required)
+            </label>
+          </div>
+          {form.sourceType === "mWallet" && (
+            <>
+              <div>
+                <label className={label}>mWallet ID</label>
+                <input
+                  className={cx}
+                  value={form.mWalletId}
+                  onChange={(e) => setForm((prev) => ({ ...prev, mWalletId: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className={label}>PIN</label>
+                <input
+                  className={cx}
+                  type="password"
+                  value={form.mWalletPin}
+                  onChange={(e) => setForm((prev) => ({ ...prev, mWalletPin: e.target.value }))}
+                />
+              </div>
+            </>
+          )}
           <div>
             <label className={label}>Biller code</label>
             <input
@@ -298,7 +349,7 @@ export default function SinglePaymentForm() {
             />
           </div>
           <div>
-            <label className={label}>CRN</label>
+            <label className={label}>CRN / Reference number</label>
             <input
               className={cx}
               value={form.crn || ""}
@@ -311,29 +362,6 @@ export default function SinglePaymentForm() {
               className={cx}
               value={form.billerName || ""}
               onChange={(e) => setForm((prev) => ({ ...prev, billerName: e.target.value }))}
-            />
-          </div>
-        </div>
-      )}
-
-      {groups.includes("child") && (
-        <div className={row}>
-          <div>
-            <label className={label}>Child mAccount number</label>
-            <input
-              className={cx}
-              value={form.childMaccountNumber || ""}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, childMaccountNumber: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <label className={label}>Lodgement reference</label>
-            <input
-              className={cx}
-              value={form.lodgementReference || ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, lodgementReference: e.target.value }))}
             />
           </div>
         </div>
