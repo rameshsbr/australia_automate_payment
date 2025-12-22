@@ -109,189 +109,135 @@ export function toMonoovaRequest(body: ValidateExecuteUI) {
   };
 }
 
-export type RailId =
-  | "DE_DIRECT_CREDIT"
-  | "DE_DIRECT_CREDIT_TOKEN"
-  // | "DE_DIRECT_DEBIT"
-  // | "DE_DIRECT_DEBIT_TOKEN"
-  | "NPP_BANK"
-  | "NPP_PAYID"
-  | "BPAY"
-  | "CHILD_PAY"
-  | "CHILD_DEBIT";
+export type Rail =
+  | "de"
+  | "de-token"
+  | "dd-token"
+  | "npp-bank"
+  | "npp-payid"
+  | "bpay"
+  | "child-credit"
+  | "child-debit";
 
-export const PAYMENT_RAILS: { id: RailId; label: string }[] = [
-  { id: "DE_DIRECT_CREDIT", label: "Direct Credit (DE)" },
-  { id: "DE_DIRECT_CREDIT_TOKEN", label: "Direct Credit (Token)" },
-  // { id: "DE_DIRECT_DEBIT", label: "Direct Debit (DE)" },
-  // { id: "DE_DIRECT_DEBIT_TOKEN", label: "Direct Debit (Token)" },
-  { id: "NPP_BANK", label: "NPP – Bank Account" },
-  { id: "NPP_PAYID", label: "NPP – PayID" },
-  { id: "BPAY", label: "BPAY" },
-  { id: "CHILD_PAY", label: "Pay Child mAccount" },
-  { id: "CHILD_DEBIT", label: "Debit Child mAccount" },
-];
-
-export type FormValues = {
-  rail: RailId;
-  amount: string;
-  currency: "AUD";
+export type FormState = {
+  callerUniqueReference?: string;
+  amount: string | number;
+  currency: string;
+  rail: Rail;
   bsb?: string;
   accountNumber?: string;
   accountName?: string;
   lodgementReference?: string;
-  storedToken?: string;
   payId?: string;
   payIdType?: "Email" | "Phone" | "ABN" | "OrgId";
+  remitterName?: string;
+  storedToken?: string;
   billerCode?: string;
   crn?: string;
-  childMaccount?: string;
+  billerName?: string;
+  mAccountNumber?: string;
 };
 
-export function buildMonoovaSinglePaymentBody(v: FormValues) {
+const twoDp = (v: string | number) =>
+  typeof v === "number" ? v.toFixed(2) : /\./.test(v) ? Number(v).toFixed(2) : `${v}.00`;
+
+export function normalizeSinglePayment(f: FormState) {
+  const callerUniqueReference =
+    f.callerUniqueReference ||
+    (globalThis.crypto?.randomUUID ? crypto.randomUUID() : `web-${Date.now()}`);
+
   const base = {
-    callerUniqueReference: crypto.randomUUID(),
+    callerUniqueReference,
     source: { type: "mAccount" as const },
+    disbursements: [{} as any],
   };
 
-  const amt = v.amount;
-  const cur = v.currency;
+  const d = base.disbursements[0];
+  d.type = "DE";
+  d.amount = twoDp(f.amount);
+  d.currency = f.currency || "AUD";
 
-  switch (v.rail) {
-    case "DE_DIRECT_CREDIT":
-      return {
-        ...base,
-        disbursements: [
-          {
-            type: "DE",
-            disbursementMethod: "DirectCredit",
-            amount: amt,
-            currency: cur,
-            toDirectCreditDetails: {
-              bsbNumber: v.bsb,
-              accountNumber: v.accountNumber,
-              accountName: v.accountName,
-              lodgementReference: v.lodgementReference,
-            },
-          },
-        ],
+  switch (f.rail) {
+    case "de": {
+      d.toDirectCreditDetails = {
+        bsbNumber: f.bsb || "",
+        bsb: f.bsb || "",
+        accountNumber: f.accountNumber || "",
+        accountName: f.accountName || "",
+        lodgementReference: f.lodgementReference || "",
       };
-
-    case "DE_DIRECT_CREDIT_TOKEN":
-      return {
-        ...base,
-        disbursements: [
-          {
-            type: "DE",
-            disbursementMethod: "DirectCredit",
-            amount: amt,
-            currency: cur,
-            toDirectCreditUsingTokenDetails: {
-              token: v.storedToken,
-            },
-          },
-        ],
+      break;
+    }
+    case "de-token": {
+      d.toDirectCreditUsingTokenDetails = { token: f.storedToken || "" };
+      break;
+    }
+    case "dd-token": {
+      d.toDirectDebitUsingTokenDetails = { token: f.storedToken || "" };
+      break;
+    }
+    case "npp-bank": {
+      d.toNppBankAccountDetails = {
+        bsbNumber: f.bsb || "",
+        accountNumber: f.accountNumber || "",
+        accountName: f.accountName || "",
+        lodgementReference: f.lodgementReference || "",
       };
-
-    case "NPP_BANK":
-      return {
-        ...base,
-        disbursements: [
-          {
-            type: "DE",
-            amount: amt,
-            currency: cur,
-            toNppBankAccountDetails: {
-              bsbNumber: v.bsb,
-              accountNumber: v.accountNumber,
-              accountName: v.accountName,
-              lodgementReference: v.lodgementReference,
-            },
-          },
-        ],
+      break;
+    }
+    case "npp-payid": {
+      d.toNppPayIdDetails = {
+        payId: f.payId || "",
+        payIdType: f.payIdType || "Email",
+        remitterName: f.remitterName || f.accountName || "",
+        lodgementReference: f.lodgementReference || "",
       };
-
-    case "NPP_PAYID":
-      return {
-        ...base,
-        disbursements: [
-          {
-            type: "DE",
-            amount: amt,
-            currency: cur,
-            toNppPayIdDetails: {
-              payId: v.payId,
-              payIdType: v.payIdType,
-              remitterName: v.accountName,
-              lodgementReference: v.lodgementReference,
-            },
-          },
-        ],
+      break;
+    }
+    case "bpay": {
+      d.toBpayDetails = {
+        billerCode: f.billerCode || "",
+        crn: f.crn || "",
+        billerName: f.billerName || "",
       };
-
-    case "BPAY":
-      return {
-        ...base,
-        disbursements: [
-          {
-            type: "DE",
-            amount: amt,
-            currency: cur,
-            toBpayDetails: {
-              billerCode: v.billerCode,
-              crn: v.crn,
-              billerName: v.accountName,
-            },
-          },
-        ],
-      };
-
-    case "CHILD_PAY":
-      return {
-        ...base,
-        disbursements: [
-          {
-            type: "DE",
-            amount: amt,
-            currency: cur,
-            toChildMaccountDetails: {
-              mAccountNumber: v.childMaccount,
-            },
-          },
-        ],
-      };
-
-    case "CHILD_DEBIT":
-      return {
-        ...base,
-        disbursements: [
-          {
-            type: "DE",
-            amount: amt,
-            currency: cur,
-            fromChildMaccountDetails: {
-              mAccountNumber: v.childMaccount,
-            },
-          },
-        ],
-      };
-
+      break;
+    }
+    case "child-credit": {
+      d.fromChildMaccountDetails = { mAccountNumber: f.mAccountNumber || "" };
+      break;
+    }
+    case "child-debit": {
+      d.toChildMaccountDetails = { mAccountNumber: f.mAccountNumber || "" };
+      break;
+    }
     default:
-      throw new Error(`Unknown rail: ${v.rail}`);
+      throw new Error(`Unknown rail: ${(f as any).rail}`);
   }
+
+  return base;
 }
 
+export const PAYMENT_RAILS: { id: Rail; label: string }[] = [
+  { id: "de", label: "Direct Credit (DE)" },
+  { id: "de-token", label: "Direct Credit (Token)" },
+  { id: "dd-token", label: "Direct Debit (Token)" },
+  { id: "npp-bank", label: "NPP – Bank Account" },
+  { id: "npp-payid", label: "NPP – PayID" },
+  { id: "bpay", label: "BPAY" },
+  { id: "child-debit", label: "Pay child mAccount" },
+  { id: "child-credit", label: "Debit child mAccount" },
+];
+
 export const RAIL_FIELD_GROUPS: Record<
-  RailId,
+  Rail,
   Array<"deBank" | "token" | "payId" | "bpay" | "child">
 > = {
-  DE_DIRECT_CREDIT: ["deBank"],
-  DE_DIRECT_CREDIT_TOKEN: ["token"],
-  // DE_DIRECT_DEBIT: ["deBank"],
-  // DE_DIRECT_DEBIT_TOKEN: ["token"],
-  NPP_BANK: ["deBank"],
-  NPP_PAYID: ["payId"],
-  BPAY: ["bpay"],
-  CHILD_PAY: ["child"],
-  CHILD_DEBIT: ["child"],
+  de: ["deBank"],
+  "de-token": ["token"],
+  "dd-token": ["token"],
+  "npp-bank": ["deBank"],
+  "npp-payid": ["payId"],
+  bpay: ["bpay"],
+  "child-credit": ["child"],
+  "child-debit": ["child"],
 };

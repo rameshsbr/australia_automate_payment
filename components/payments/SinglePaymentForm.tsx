@@ -4,16 +4,15 @@ import { useState } from "react";
 import {
   PAYMENT_RAILS,
   RAIL_FIELD_GROUPS,
-  buildMonoovaSinglePaymentBody,
-  type FormValues,
-  type RailId,
+  normalizeSinglePayment,
+  type Rail,
 } from "@/lib/payments/normalize";
 
 type Result = { ok: boolean; json: any } | null;
 
 export default function SinglePaymentForm() {
-  const [form, setForm] = useState<FormValues>({
-    rail: "DE_DIRECT_CREDIT",
+  const [form, setForm] = useState({
+    rail: "de" as Rail,
     amount: "1.00",
     currency: "AUD",
     bsb: "062000",
@@ -21,6 +20,10 @@ export default function SinglePaymentForm() {
     accountName: "Demo",
     lodgementReference: "Test",
     payIdType: "Email",
+    storedToken: "",
+    billerCode: "",
+    crn: "",
+    mAccountNumber: "",
   });
   const [submitting, setSubmitting] = useState<"validate" | "execute" | null>(null);
   const [result, setResult] = useState<Result>(null);
@@ -31,7 +34,23 @@ export default function SinglePaymentForm() {
     try {
       setSubmitting(kind);
       setResult(null);
-      const body = buildMonoovaSinglePaymentBody(form as FormValues);
+      const body = normalizeSinglePayment({
+        rail: form.rail,
+        amount: form.amount,
+        currency: form.currency,
+        bsb: form.bsb,
+        accountNumber: form.accountNumber,
+        accountName: form.accountName,
+        lodgementReference: form.lodgementReference,
+        payId: form.payId,
+        payIdType: form.payIdType,
+        remitterName: form.accountName,
+        storedToken: form.storedToken,
+        billerCode: form.billerCode,
+        crn: form.crn,
+        billerName: form.accountName,
+        mAccountNumber: form.mAccountNumber,
+      });
       const res = await fetch(`/api/internal/payments/${kind}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -58,7 +77,7 @@ export default function SinglePaymentForm() {
           <select
             className={cx}
             value={form.rail}
-            onChange={(e) => setForm((prev) => ({ ...prev, rail: e.target.value as RailId }))}
+            onChange={(e) => setForm((prev) => ({ ...prev, rail: e.target.value as Rail }))}
           >
             {PAYMENT_RAILS.map((o) => (
               <option key={o.id} value={o.id}>
@@ -83,7 +102,7 @@ export default function SinglePaymentForm() {
               className={cx}
               value={form.currency}
               onChange={(e) =>
-                setForm((prev) => ({ ...prev, currency: e.target.value as FormValues["currency"] }))
+                setForm((prev) => ({ ...prev, currency: e.target.value }))
               }
             />
           </div>
@@ -217,8 +236,8 @@ export default function SinglePaymentForm() {
             <label className={label}>Child mAccount number</label>
             <input
               className={cx}
-              value={form.childMaccount || ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, childMaccount: e.target.value }))}
+              value={form.mAccountNumber || ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, mAccountNumber: e.target.value }))}
             />
           </div>
         </div>
