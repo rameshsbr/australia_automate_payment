@@ -1,0 +1,28 @@
+services:
+  pg-live:
+    image: postgres:16
+    # container_name: pg-live-5442   ← delete this line or pick a different name
+    ports: ["5442:5432"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payments_dashboard_live
+    volumes:
+      - pgdata-live:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  pg-sandbox:
+    image: postgres:16
+    # container_name: pg-sandbox-5443 ← delete or rename
+    ports: ["5443:5432"]
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: payments_dashboard
+    volumes:
+      - pgdata-sandbox:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata-live:
+  pgdata-sandbox:
