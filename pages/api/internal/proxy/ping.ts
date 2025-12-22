@@ -3,6 +3,11 @@
 
 import type { NextApiRequest, NextApiResponse } from "next";
 
+export function getBaseUrlForEnv(req: NextApiRequest): string {
+  const env = req.cookies.env === "LIVE" ? "LIVE" : "SANDBOX";
+  return env === "LIVE" ? "https://api.mpay.com.au" : "https://api.m-pay.com.au";
+}
+
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   // Normalize cookie to 'SANDBOX' | 'LIVE'
   const raw = (req.cookies["env"] ?? "SANDBOX").toString();

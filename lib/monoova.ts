@@ -1,5 +1,8 @@
 // Helper utilities for Monoova authentication and routing
-export type Mode = "SANDBOX" | "LIVE";
+import { cookies } from "next/headers";
+
+export type MonoovaEnv = "SANDBOX" | "LIVE";
+export type Mode = MonoovaEnv;
 
 export type MonoovaCfg = {
   base: string;
@@ -8,7 +11,10 @@ export type MonoovaCfg = {
 };
 
 export const monoovaConfig = (mode: Mode): MonoovaCfg => ({
-  base: mode === "LIVE" ? process.env.LIVE_API_BASE! : process.env.SANDBOX_API_BASE!,
+  base:
+    mode === "LIVE"
+      ? process.env.LIVE_API_BASE || "https://api.mpay.com.au"
+      : process.env.SANDBOX_API_BASE || "https://api.m-pay.com.au",
   apiKey: mode === "LIVE" ? process.env.LIVE_API_KEY! : process.env.SANDBOX_API_KEY!,
   mAccount: mode === "LIVE" ? process.env.LIVE_MACCOUNT! : process.env.SANDBOX_MACCOUNT!,
 });
@@ -61,4 +67,43 @@ export async function authHeaderForPath(path: string, mode: Mode): Promise<strin
     return basicForTokenEndpoint(cfg.mAccount, cfg.apiKey);
   }
   return basicForApiKey(cfg.apiKey);
+}
+
+export function monoovaBase(): string {
+  let envCookie: string | undefined;
+  try {
+    envCookie = cookies().get("env")?.value;
+  } catch {
+    envCookie = undefined;
+  }
+  const c = envCookie;
+  const env = (c === "LIVE" ? "LIVE" : "SANDBOX") as MonoovaEnv;
+  return env === "LIVE" ? "https://api.mpay.com.au" : "https://api.m-pay.com.au";
+}
+
+// Minimal fetch wrapper used by our internal routes (server-only)
+export async function monoovaFetch<T>(
+  path: string,
+  init: RequestInit & { body?: any } = {}
+): Promise<T> {
+  const base = monoovaBase();
+  const url = `${base}${path}`;
+
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    ...(init.headers as Record<string, string> | undefined),
+  };
+
+  const res = await fetch(url, {
+    method: init.method ?? "GET",
+    headers,
+    body: init.body ? JSON.stringify(init.body) : undefined,
+    cache: "no-store",
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    (data as any)._httpStatus = res.status;
+  }
+  return data as T;
 }

@@ -1,6 +1,10 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import clsx from "clsx";
+import clsx, { type ClassValue } from "clsx";
+
+export function cn(...inputs: ClassValue[]) {
+  return clsx(...inputs);
+}
 
 /** WHY: Minimal headless popover/dropdown for reuse without heavy deps. */
 export function Popover({
