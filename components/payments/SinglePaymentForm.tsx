@@ -1,18 +1,62 @@
 "use client";
 
-import { useState } from "react";
-import {
-  PAYMENT_RAILS,
-  RAIL_FIELD_GROUPS,
-  buildMonoovaPayment,
-  type Rail,
-} from "@/lib/payments/normalize";
+import { useMemo, useState } from "react";
+import { buildMonoovaPayment, type Rail } from "@/lib/payments/normalize";
 
-type Result = { ok: boolean; json: any } | null;
+type FormState = {
+  rail: Rail;
+  amount: string;
+  currency: string;
+  bsb: string;
+  accountNumber: string;
+  accountName: string;
+  lodgementReference: string;
+  payIdType: "Email" | "Phone" | "ABN" | "OrganisationId";
+  token: string;
+  billerCode: string;
+  crn: string;
+  billerName: string;
+  childMaccountNumber: string;
+  payId: string;
+  callerUniqueReference: string;
+};
+
+type RailFieldGroup = "deBank" | "token" | "payId" | "bpay" | "child";
+
+const PAYMENT_RAILS: { id: Rail; label: string }[] = [
+  { id: "DIRECT_CREDIT_DE", label: "Direct Credit (DE)" },
+  { id: "DIRECT_CREDIT_TOKEN", label: "Direct Credit (Token)" },
+  { id: "DIRECT_DEBIT_TOKEN", label: "Direct Debit (Token)" },
+  { id: "NPP_BANK", label: "NPP – Bank Account" },
+  { id: "NPP_PAYID", label: "NPP – PayID" },
+  { id: "BPAY", label: "BPAY" },
+  { id: "PAY_CHILD_MACCOUNT", label: "Pay Child mAccount" },
+  { id: "DEBIT_CHILD_MACCOUNT", label: "Debit Child mAccount" },
+];
+
+const RAIL_FIELD_GROUPS: Record<Rail, RailFieldGroup[]> = {
+  DIRECT_CREDIT_DE: ["deBank"],
+  DIRECT_CREDIT_TOKEN: ["token"],
+  DIRECT_DEBIT_TOKEN: ["token"],
+  NPP_BANK: ["deBank"],
+  NPP_PAYID: ["payId"],
+  BPAY: ["bpay"],
+  PAY_CHILD_MACCOUNT: ["child"],
+  DEBIT_CHILD_MACCOUNT: ["child"],
+};
+
+const PAYID_TYPES: { id: FormState["payIdType"]; label: string }[] = [
+  { id: "Email", label: "Email" },
+  { id: "Phone", label: "Phone" },
+  { id: "ABN", label: "ABN" },
+  { id: "OrganisationId", label: "Organisation ID" },
+];
+
+type Result = string | null;
 
 export default function SinglePaymentForm() {
-  const [form, setForm] = useState({
-    rail: "Direct Credit (DE)" as Rail,
+  const [form, setForm] = useState<FormState>(() => ({
+    rail: "DIRECT_CREDIT_DE",
     amount: "1.00",
     currency: "AUD",
     bsb: "062000",
@@ -20,64 +64,79 @@ export default function SinglePaymentForm() {
     accountName: "Demo",
     lodgementReference: "Test",
     payIdType: "Email",
-    storedToken: "",
+    token: "",
     billerCode: "",
     crn: "",
-    mAccountNumber: "",
+    billerName: "",
+    childMaccountNumber: "",
     payId: "",
-  });
+    callerUniqueReference: globalThis.crypto?.randomUUID?.() || `ui-${Date.now()}`,
+  }));
   const [submitting, setSubmitting] = useState<"validate" | "execute" | null>(null);
   const [result, setResult] = useState<Result>(null);
 
   const groups = RAIL_FIELD_GROUPS[form.rail];
 
-  async function submit(kind: "validate" | "execute") {
+  const prettyResult = useMemo(() => {
+    if (!result) return null;
     try {
-      setSubmitting(kind);
+      return JSON.stringify(JSON.parse(result), null, 2);
+    } catch (e) {
+      return result;
+    }
+  }, [result]);
+
+  async function post(path: "/api/internal/payments/validate" | "/api/internal/payments/execute") {
+    try {
+      setSubmitting(path.includes("validate") ? "validate" : "execute");
       setResult(null);
-      const callerUniqueReference =
-        globalThis.crypto?.randomUUID?.() || `ui-${Date.now()}`;
-      const body = buildMonoovaPayment({
+
+      const fields =
+        form.rail === "DIRECT_CREDIT_DE" || form.rail === "NPP_BANK"
+          ? {
+              bsb: form.bsb,
+              accountNumber: form.accountNumber,
+              accountName: form.accountName,
+              lodgementReference: form.lodgementReference,
+            }
+          : form.rail === "DIRECT_CREDIT_TOKEN" || form.rail === "DIRECT_DEBIT_TOKEN"
+            ? { token: form.token, lodgementReference: form.lodgementReference }
+            : form.rail === "NPP_PAYID"
+              ? {
+                  payId: form.payId,
+                  payIdType: form.payIdType,
+                  remitterName: form.accountName,
+                  lodgementReference: form.lodgementReference,
+                }
+              : form.rail === "BPAY"
+                ? {
+                    billerCode: form.billerCode,
+                    crn: form.crn,
+                    billerName: form.billerName,
+                  }
+                : {
+                    mAccountNumber: form.childMaccountNumber,
+                    lodgementReference: form.lodgementReference,
+                  };
+
+      const payload = buildMonoovaPayment({
         rail: form.rail,
         amount: form.amount,
-        currency: form.currency,
-        reference: form.lodgementReference,
-        callerUniqueReference,
+        currency: form.currency as "AUD",
+        callerUniqueReference: form.callerUniqueReference,
         source: { type: "mAccount" },
-        fields:
-          form.rail === "Direct Credit (DE)" || form.rail === "NPP – Bank Account"
-            ? {
-                bsb: form.bsb,
-                accountNumber: form.accountNumber,
-                accountName: form.accountName,
-              }
-            : form.rail === "NPP – PayID"
-            ? {
-                payId: form.payId,
-                payIdType: form.payIdType,
-                remitterName: form.accountName,
-              }
-            : form.rail === "BPAY"
-            ? {
-                billerCode: form.billerCode,
-                crn: form.crn,
-                billerName: form.accountName,
-              }
-            : form.rail === "Direct Credit (Token)" || form.rail === "Direct Debit (Token)"
-            ? { token: form.storedToken }
-            : {
-                mAccountNumber: form.mAccountNumber,
-              },
+        fields,
       });
-      const res = await fetch(`/api/internal/payments/${kind}`, {
+
+      const res = await fetch(path, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify(payload),
       });
-      const json = await res.json().catch(() => ({}));
-      setResult({ ok: res.ok, json });
+      const txt = await res.text();
+      setResult(txt);
     } catch (e) {
-      setResult({ ok: false, json: { error: String(e) } });
+      setResult(String(e));
     } finally {
       setSubmitting(null);
     }
@@ -119,9 +178,7 @@ export default function SinglePaymentForm() {
             <input
               className={cx}
               value={form.currency}
-              onChange={(e) =>
-                setForm((prev) => ({ ...prev, currency: e.target.value }))
-              }
+              onChange={(e) => setForm((prev) => ({ ...prev, currency: e.target.value }))}
             />
           </div>
         </div>
@@ -170,8 +227,16 @@ export default function SinglePaymentForm() {
             <label className={label}>Stored token</label>
             <input
               className={cx}
-              value={form.storedToken || ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, storedToken: e.target.value }))}
+              value={form.token || ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, token: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className={label}>Lodgement reference</label>
+            <input
+              className={cx}
+              value={form.lodgementReference || ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, lodgementReference: e.target.value }))}
             />
           </div>
         </div>
@@ -192,12 +257,15 @@ export default function SinglePaymentForm() {
             <select
               className={cx}
               value={form.payIdType || "Email"}
-              onChange={(e) => setForm((prev) => ({ ...prev, payIdType: e.target.value as any }))}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, payIdType: e.target.value as FormState["payIdType"] }))
+              }
             >
-              <option value="Email">Email</option>
-              <option value="Phone">Phone</option>
-              <option value="ABN">ABN</option>
-              <option value="OrgId">OrganisationId</option>
+              {PAYID_TYPES.map((type) => (
+                <option key={type.id} value={type.id}>
+                  {type.label}
+                </option>
+              ))}
             </select>
           </div>
           <div>
@@ -241,8 +309,8 @@ export default function SinglePaymentForm() {
             <label className={label}>Biller name (optional)</label>
             <input
               className={cx}
-              value={form.accountName || ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, accountName: e.target.value }))}
+              value={form.billerName || ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, billerName: e.target.value }))}
             />
           </div>
         </div>
@@ -254,8 +322,18 @@ export default function SinglePaymentForm() {
             <label className={label}>Child mAccount number</label>
             <input
               className={cx}
-              value={form.mAccountNumber || ""}
-              onChange={(e) => setForm((prev) => ({ ...prev, mAccountNumber: e.target.value }))}
+              value={form.childMaccountNumber || ""}
+              onChange={(e) =>
+                setForm((prev) => ({ ...prev, childMaccountNumber: e.target.value }))
+              }
+            />
+          </div>
+          <div>
+            <label className={label}>Lodgement reference</label>
+            <input
+              className={cx}
+              value={form.lodgementReference || ""}
+              onChange={(e) => setForm((prev) => ({ ...prev, lodgementReference: e.target.value }))}
             />
           </div>
         </div>
@@ -264,7 +342,7 @@ export default function SinglePaymentForm() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => submit("validate")}
+          onClick={() => post("/api/internal/payments/validate")}
           disabled={!!submitting}
           className="inline-flex items-center justify-center bg-[#6d44c9] rounded-lg h-9 px-4 text-sm text-white disabled:opacity-60"
         >
@@ -272,7 +350,7 @@ export default function SinglePaymentForm() {
         </button>
         <button
           type="button"
-          onClick={() => submit("execute")}
+          onClick={() => post("/api/internal/payments/execute")}
           disabled={!!submitting}
           className="inline-flex items-center justify-center bg-[#374151] rounded-lg h-9 px-4 text-sm text-white disabled:opacity-60"
         >
@@ -280,9 +358,9 @@ export default function SinglePaymentForm() {
         </button>
       </div>
 
-      {result && (
+      {prettyResult && (
         <pre className="mt-3 max-h-80 overflow-auto rounded-lg border border-outline/40 bg-surface p-3 text-xs whitespace-pre-wrap">
-{JSON.stringify(result.json, null, 2)}
+{prettyResult}
         </pre>
       )}
     </div>

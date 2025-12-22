@@ -1,9 +1,19 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  res.status(200).json({
-    method: req.method,
-    headers: req.headers,
-    parsedBody: req.body,
-  });
+export default function handler(req: NextApiRequest, res: NextApiResponse) {
+  res.setHeader("content-type", "application/json");
+  res.status(200).send(
+    JSON.stringify(
+      {
+        method: req.method,
+        body: req.body ?? null,
+        headers: {
+          "content-type": req.headers["content-type"],
+          cookie: req.headers.cookie ?? null,
+        },
+      },
+      null,
+      2,
+    ),
+  );
 }
