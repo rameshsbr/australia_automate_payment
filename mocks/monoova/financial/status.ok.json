@@ -1,0 +1,15 @@
+{
+  "durationMs": 12,
+  "status": "Ok",
+  "statusDescription": "Found",
+  "transactions": [
+    {
+      "uniqueReference": "demo-uid",
+      "status": "Complete",
+      "statusDescription": "Cleared",
+      "amount": 1.23,
+      "paymentSource": "mAccount",
+      "disbursementMethod": "directcredit"
+    }
+  ]
+}

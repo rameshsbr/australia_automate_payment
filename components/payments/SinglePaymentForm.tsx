@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { buildMonoovaPayment, type Rail } from "@/lib/payments/normalize";
+import type { Rail } from "@/lib/payments/normalize";
+import { buildFinancialRequest } from "@/lib/monoova/build";
 
 type FormState = {
   rail: Rail;
@@ -20,6 +21,7 @@ type FormState = {
   payId: string;
   callerUniqueReference: string;
   sourceType: "mAccount" | "mWallet";
+  mAccountToken: string;
   mWalletId: string;
   mWalletPin: string;
 };
@@ -68,6 +70,7 @@ export default function SinglePaymentForm() {
     billerName: "",
     payId: "",
     sourceType: "mAccount",
+    mAccountToken: "",
     mWalletId: "",
     mWalletPin: "",
     callerUniqueReference: globalThis.crypto?.randomUUID?.() || `ui-${Date.now()}`,
@@ -86,48 +89,90 @@ export default function SinglePaymentForm() {
     }
   }, [result]);
 
-  async function post(path: "/api/internal/payments/validate" | "/api/internal/payments/execute") {
-    try {
-      setSubmitting(path.includes("validate") ? "validate" : "execute");
-      setResult(null);
+  function buildPayload(): Monoova.FinancialTransactionRequest {
+    const paymentSource: Monoova.PaymentSource =
+      form.rail === "BPAY" || form.sourceType === "mWallet" ? "mWallet" : "mAccount";
 
-      const fields =
-        form.rail === "DIRECT_CREDIT_DE" || form.rail === "NPP_BANK"
-          ? {
-              bsb: form.bsb,
-              accountNumber: form.accountNumber,
-              accountName: form.accountName,
-              lodgementReference: form.lodgementReference,
-            }
-          : form.rail === "DIRECT_CREDIT_TOKEN"
-            ? { token: form.token, lodgementReference: form.lodgementReference }
+    if (paymentSource === "mAccount" && !form.mAccountToken) {
+      throw new Error("mAccount token is required");
+    }
+    if (paymentSource === "mWallet" && (!form.mWalletId || !form.mWalletPin)) {
+      throw new Error("mWallet token and pin are required");
+    }
+
+    const disbursementMethod =
+      form.rail === "DIRECT_CREDIT_DE"
+        ? "directcredit"
+        : form.rail === "DIRECT_CREDIT_TOKEN"
+          ? "token"
+          : form.rail === "NPP_BANK"
+            ? "nppcreditbankaccount"
             : form.rail === "NPP_PAYID"
+              ? "nppcreditpayid"
+              : "bpay";
+
+    const payload = buildFinancialRequest({
+      totalAmount: form.amount,
+      paymentSource,
+      uniqueReference: form.callerUniqueReference,
+      description: form.lodgementReference || undefined,
+      mAccountToken: form.mAccountToken,
+      mWalletToken: form.mWalletId,
+      mWalletPin: form.mWalletPin,
+      disbursements: [
+        {
+          method: disbursementMethod as any,
+          amount: form.amount,
+          toDirectCreditDetails:
+            form.rail === "DIRECT_CREDIT_DE"
+              ? {
+                  bsbNumber: form.bsb,
+                  accountNumber: form.accountNumber,
+                  accountName: form.accountName,
+                  lodgementReference: form.lodgementReference || undefined,
+                }
+              : undefined,
+          toNppCreditBankAccountDetails:
+            form.rail === "NPP_BANK"
+              ? {
+                  bsbNumber: form.bsb,
+                  accountNumber: form.accountNumber,
+                  accountName: form.accountName,
+                  lodgementReference: form.lodgementReference || undefined,
+                }
+              : undefined,
+          toNppCreditPayIdDetails:
+            form.rail === "NPP_PAYID"
               ? {
                   payId: form.payId,
                   payIdType: form.payIdType,
                   accountName: form.payIdAccountName,
                   remitterName: form.payIdAccountName,
-                  lodgementReference: form.lodgementReference,
+                  lodgementReference: form.lodgementReference || undefined,
                 }
-              : {
+              : undefined,
+          toBPayDetails:
+            form.rail === "BPAY"
+              ? {
                   billerCode: form.billerCode,
-                  crnOrReferenceNumber: form.crn,
-                  billerName: form.billerName,
-                };
+                  referenceNumber: form.crn,
+                  billerName: form.billerName || undefined,
+                }
+              : undefined,
+          toToken: form.rail === "DIRECT_CREDIT_TOKEN" ? form.token : undefined,
+        },
+      ],
+    });
 
-      const source =
-        form.rail === "BPAY" && form.sourceType === "mWallet"
-          ? { type: "mWallet" as const, mWalletId: form.mWalletId, pin: form.mWalletPin }
-          : { type: "mAccount" as const };
+    return payload as Monoova.FinancialTransactionRequest;
+  }
 
-      const payload = buildMonoovaPayment({
-        rail: form.rail,
-        amount: form.amount,
-        currency: form.currency as "AUD",
-        callerUniqueReference: form.callerUniqueReference,
-        source,
-        fields,
-      });
+  async function post(path: "/api/monoova/financial/validate" | "/api/monoova/financial/execute") {
+    try {
+      setSubmitting(path.includes("validate") ? "validate" : "execute");
+      setResult(null);
+
+      const payload = buildPayload();
 
       const res = await fetch(path, {
         method: "POST",
@@ -190,6 +235,19 @@ export default function SinglePaymentForm() {
           </div>
         </div>
       </div>
+
+      {form.sourceType === "mAccount" && form.rail !== "BPAY" && (
+        <div className={row}>
+          <div>
+            <label className={label}>mAccount token</label>
+            <input
+              className={cx}
+              value={form.mAccountToken}
+              onChange={(e) => setForm((prev) => ({ ...prev, mAccountToken: e.target.value }))}
+            />
+          </div>
+        </div>
+      )}
 
       {groups.includes("deBank") && (
         <div className={row}>
@@ -322,7 +380,7 @@ export default function SinglePaymentForm() {
           {form.sourceType === "mWallet" && (
             <>
               <div>
-                <label className={label}>mWallet ID</label>
+                <label className={label}>mWallet token</label>
                 <input
                   className={cx}
                   value={form.mWalletId}
@@ -370,7 +428,7 @@ export default function SinglePaymentForm() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => post("/api/internal/payments/validate")}
+          onClick={() => post("/api/monoova/financial/validate")}
           disabled={!!submitting}
           className="inline-flex items-center justify-center bg-[#6d44c9] rounded-lg h-9 px-4 text-sm text-white disabled:opacity-60"
         >
@@ -378,7 +436,7 @@ export default function SinglePaymentForm() {
         </button>
         <button
           type="button"
-          onClick={() => post("/api/internal/payments/execute")}
+          onClick={() => post("/api/monoova/financial/execute")}
           disabled={!!submitting}
           className="inline-flex items-center justify-center bg-[#374151] rounded-lg h-9 px-4 text-sm text-white disabled:opacity-60"
         >
