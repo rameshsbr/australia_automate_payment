@@ -80,11 +80,26 @@ model ApiLog {
 }
 
 model WebhookEvent {
-  id             String      @id @default(cuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id])
-  environment    Environment
-  topic          String
-  payload        Json
-  createdAt      DateTime @default(now())
+  id           String   @id @default(cuid())
+  kind         String
+  receivedAt   DateTime @default(now())
+  verified     Boolean  @default(false)
+  payload      Json
+  note         String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  @@index([kind, receivedAt])
+}
+
+model TransactionLog {
+  id           String   @id @default(cuid())
+  kind         String
+  requestedAt  DateTime @default(now())
+  mode         String   // MOCK|SANDBOX|LIVE
+  path         String
+  requestBody  Json?
+  responseBody Json?
+  httpStatus   Int
+  redactions   Json?
+  @@index([kind, requestedAt])
 }

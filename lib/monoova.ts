@@ -3,7 +3,7 @@
 
 import { cookies } from "next/headers";
 
-export type MonoovaEnv = "SANDBOX" | "LIVE";
+export type MonoovaEnv = "SANDBOX" | "LIVE" | "MOCK";
 export type Mode = MonoovaEnv;
 
 export type MonoovaCfg = {
@@ -17,17 +17,22 @@ export type MonoovaCfg = {
  */
 export const monoovaConfig = (mode: Mode): MonoovaCfg => {
   const isLive = mode === "LIVE";
+  const isMock = mode === "MOCK";
 
   const base =
-    (isLive
-      ? process.env.MONOOVA_BASE_LIVE || process.env.LIVE_API_BASE
-      : process.env.MONOOVA_BASE_SANDBOX || process.env.SANDBOX_API_BASE) ||
-    (isLive ? "https://api.mpay.com.au" : "https://api.m-pay.com.au");
+    (isMock
+      ? process.env.MONOOVA_BASE_MOCK
+      : isLive
+        ? process.env.MONOOVA_BASE_LIVE || process.env.LIVE_API_BASE
+        : process.env.MONOOVA_BASE_SANDBOX || process.env.SANDBOX_API_BASE) ||
+    (isMock ? "http://localhost:4010" : isLive ? "https://api.mpay.com.au" : "https://api.m-pay.com.au");
 
   const apiKey =
     (isLive
       ? process.env.MONOOVA_API_KEY_LIVE || process.env.LIVE_API_KEY
-      : process.env.MONOOVA_API_KEY_SANDBOX || process.env.SANDBOX_API_KEY) || "";
+      : isMock
+        ? process.env.MONOOVA_API_KEY_SANDBOX || ""
+        : process.env.MONOOVA_API_KEY_SANDBOX || process.env.SANDBOX_API_KEY) || "";
 
   const mAccount =
     (isLive ? process.env.LIVE_MACCOUNT : process.env.SANDBOX_MACCOUNT) || "";
@@ -98,6 +103,8 @@ export async function authHeaderForPath(path: string, mode: Mode): Promise<strin
   const p = (path || "").toLowerCase();
   const cfg = monoovaConfig(mode);
 
+  if (mode === "MOCK") return "";
+
   if (!cfg.apiKey) throw new Error(`Missing API key for ${mode}.`);
 
   if (p.startsWith("payto") || p.startsWith("cards")) {
@@ -124,7 +131,7 @@ export function monoovaBase(): string {
   } catch {
     envCookie = undefined;
   }
-  const mode: Mode = envCookie === "LIVE" ? "LIVE" : "SANDBOX";
+  const mode: Mode = envCookie === "LIVE" ? "LIVE" : envCookie === "MOCK" ? "MOCK" : "SANDBOX";
   return monoovaConfig(mode).base;
 }
 

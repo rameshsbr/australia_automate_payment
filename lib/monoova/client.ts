@@ -1,60 +1,53 @@
 import { cookies } from "next/headers";
+import { basicForApiKey, monoovaConfig, type Mode } from "@/lib/monoova";
 
-type Mode = "MOCK" | "SANDBOX" | "LIVE";
-
-function getMode(): Mode {
+function cookieMode(): Mode {
   try {
     const v = cookies().get("env")?.value?.toUpperCase();
-    if (v === "LIVE") return "LIVE";
-    if (v === "MOCK") return "MOCK";
+    if (v === "LIVE" || v === "MOCK") return v;
   } catch {
-    // ignore header access failures
+    // ignore
   }
   return "SANDBOX";
 }
 
-function baseFor(mode: Mode) {
-  if (mode === "MOCK") return process.env.MONOOVA_BASE_MOCK || "http://localhost:4010";
-  if (mode === "LIVE") return process.env.MONOOVA_BASE_LIVE || "https://api.mpay.com.au";
-  return process.env.MONOOVA_BASE_SANDBOX || "https://api.m-pay.com.au";
-}
-
-function apiKeyFor(mode: Mode) {
-  return mode === "LIVE"
-    ? process.env.MONOOVA_API_KEY_LIVE || ""
-    : process.env.MONOOVA_API_KEY_SANDBOX || "";
-}
-
-function basicHeader(apiKey: string) {
-  return "Basic " + Buffer.from(`${apiKey}:`).toString("base64");
-}
-
 export async function fetchMonoova(
   path: string,
-  init: RequestInit & { modeOverride?: Mode } = {}
+  init: RequestInit = {},
+  mode: Mode = cookieMode()
 ) {
-  const mode = init.modeOverride ?? getMode();
-  const base = baseFor(mode);
-  const url = `${base}${path}`;
+  const cfg = monoovaConfig(mode);
+  const url = `${cfg.base}/${path.replace(/^\\/+/, "")}`;
 
-  const headers: Record<string, string> = {
-    accept: "application/json",
-    "content-type": "application/json",
-    ...(init.headers as Record<string, string> | undefined),
+  const headers = new Headers(init.headers || {});
+  if (!headers.has("authorization") && mode !== "MOCK") {
+    headers.set("authorization", basicForApiKey(cfg.apiKey));
+  }
+  if (!headers.has("content-type")) headers.set("content-type", "application/json");
+  if (!headers.has("accept")) headers.set("accept", "application/json");
+
+  const body = (init as any).body;
+  const reqInit: RequestInit = {
+    method: init.method ?? "GET",
+    headers,
+    body:
+      typeof body === "string"
+        ? body
+        : body !== undefined && init.method && init.method.toUpperCase() !== "GET"
+        ? JSON.stringify(body)
+        : undefined,
+    cache: "no-store",
   };
 
-  if (mode !== "MOCK") {
-    headers.authorization = basicHeader(apiKeyFor(mode));
-  }
-
-  const res = await fetch(url, { ...init, headers, cache: "no-store" });
+  const res = await fetch(url, reqInit);
   const text = await res.text();
-  let json: any;
-  try {
-    json = JSON.parse(text);
-  } catch {
-    json = text;
-  }
+  const json = (() => {
+    try {
+      return JSON.parse(text);
+    } catch {
+      return { raw: text };
+    }
+  })();
 
-  return { status: res.status, json, headers: res.headers, url };
+  return { status: res.status, headers: Object.fromEntries(res.headers.entries()), data: json };
 }

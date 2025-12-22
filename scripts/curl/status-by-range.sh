@@ -6,5 +6,5 @@ BASE=${BASE:-http://localhost:3000/api/monoova}
 START=${1:-2024-01-01}
 END=${2:-2024-01-02}
 
-curl -sS "$BASE/financial/status/$START/$END" \
+curl -sS "$BASE/financial/status/by-date/$START/$END" \
   -H "Cookie: env=$ENV_COOKIE"
