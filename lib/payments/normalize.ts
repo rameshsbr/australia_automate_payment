@@ -1,12 +1,20 @@
 // lib/payments/normalize.ts
-//
-// Build a Monoova /financial/v2/transaction/{validate|execute} body
-// from our SinglePaymentForm values. Leaves UI untouched.
+// Canonical Monoova methods are lowercase.
+export const METHOD = {
+  DIRECT_CREDIT_DE: "directcredit",
+  DIRECT_DEBIT: "directdebit",
+  TOKEN: "token", // direct credit to a bank-account token
+  NPP_BANK: "nppcreditbankaccount",
+  NPP_PAYID: "nppcreditpayid",
+  BPAY: "bpay",
+  PAY_CHILD_MACCOUNT: "paychildmaccount",
+  DEBIT_CHILD_MACCOUNT: "debitchildmaccount",
+} as const;
 
 export type Rail =
   | "DIRECT_CREDIT_DE"
-  | "DIRECT_CREDIT_TOKEN"
-  | "DIRECT_DEBIT_TOKEN"
+  | "DIRECT_CREDIT_TOKEN"   // dest token (credit)
+  | "DIRECT_DEBIT_TOKEN"    // source token (debit)
   | "NPP_BANK"
   | "NPP_PAYID"
   | "BPAY"
@@ -14,7 +22,7 @@ export type Rail =
   | "DEBIT_CHILD_MACCOUNT";
 
 type Common = {
-  amount: string;             // "1.00"
+  amount: string;
   currency: "AUD";
   callerUniqueReference: string;
 };
@@ -23,7 +31,7 @@ type DcDeFields = {
   bsb?: string;
   bsbNumber?: string;
   accountNumber: string;
-  accountName: string;        // “remitterName” label in UI for DE
+  accountName: string;
   lodgementReference?: string;
 };
 
@@ -41,7 +49,7 @@ type NppBankFields = {
 };
 
 type NppPayIdFields = {
-  payId: string;              // email/phone/abn etc
+  payId: string;
   payIdType: "Email" | "Phone" | "ABN" | "OrganisationId";
   remitterName?: string;
   lodgementReference?: string;
@@ -49,8 +57,8 @@ type NppPayIdFields = {
 
 type BpayFields = {
   billerCode: string;
-  crn: string;                // customer reference / CRN
-  billerName?: string;        // optional
+  crn: string;              // customer reference number (CRN)
+  billerName?: string;
 };
 
 type ChildFields = {
@@ -60,7 +68,11 @@ type ChildFields = {
 
 export type BuildInput = Common & {
   rail: Rail;
-  source: { type: "mAccount" }; // current scope
+  // IMPORTANT: for Direct Debit (Token) we must be able to pass a token source
+  source:
+    | { type: "mAccount" }
+    | { type: "token"; token: string }
+    | { type: "mWallet"; mWalletId: string; pin?: string }; // BPAY use-case
   fields:
     | DcDeFields
     | TokenFields
@@ -70,7 +82,6 @@ export type BuildInput = Common & {
     | ChildFields;
 };
 
-// Normalise BSB handling (some UX fields provide `bsb`, API accepts `bsbNumber`)
 const coerceBsb = (x?: string) => (x || "").replace(/\s|-/g, "");
 
 export function buildMonoovaPayment(input: BuildInput) {
@@ -78,13 +89,12 @@ export function buildMonoovaPayment(input: BuildInput) {
 
   const base: any = {
     callerUniqueReference,
-    source, // { type: "mAccount" }
+    source,
     disbursements: [
       {
         type: "DE",
         amount,
         currency,
-        // disbursementMethod + one details object below
       },
     ],
   };
@@ -94,7 +104,7 @@ export function buildMonoovaPayment(input: BuildInput) {
   switch (rail) {
     case "DIRECT_CREDIT_DE": {
       const f = input.fields as DcDeFields;
-      d0.disbursementMethod = "DirectCredit";
+      d0.disbursementMethod = METHOD.DIRECT_CREDIT_DE;
       d0.toDirectCreditDetails = {
         bsbNumber: f.bsbNumber || coerceBsb(f.bsb),
         accountNumber: f.accountNumber,
@@ -104,32 +114,37 @@ export function buildMonoovaPayment(input: BuildInput) {
       break;
     }
 
+    // Direct Credit to a BANK-ACCOUNT TOKEN ("token" method)
     case "DIRECT_CREDIT_TOKEN": {
       const f = input.fields as TokenFields;
-      // Monoova expects token variant with a distinct details object
-      d0.disbursementMethod = "DirectCreditToken";
-      d0.toDirectCreditUsingTokenDetails = {
-        token: f.token,
-        lodgementReference: f.lodgementReference,
-      };
+      d0.disbursementMethod = METHOD.TOKEN;
+      // Per docs, token is the destination; put it at the disbursement level as `toToken`
+      // and keep lodgementReference at disbursement level (not inside details).
+      d0.toToken = f.token;
+      if (f.lodgementReference) d0.lodgementReference = f.lodgementReference;
       break;
     }
 
+    // Direct Debit using a SOURCE BANK-ACCOUNT TOKEN
     case "DIRECT_DEBIT_TOKEN": {
       const f = input.fields as TokenFields;
-      d0.disbursementMethod = "DirectDebitToken";
-      d0.toDirectDebitUsingTokenDetails = {
-        token: f.token,
-        lodgementReference: f.lodgementReference,
-      };
+      // For DD token, the token belongs to the *source*.
+      // Ensure the caller provided source.type = "token"
+      if (source?.type !== "token") {
+        throw new Error(
+          "Direct Debit (Token) requires source.type='token' and source.token=<guid>"
+        );
+      }
+      d0.disbursementMethod = METHOD.DIRECT_DEBIT;
+      if (f.lodgementReference) d0.lodgementReference = f.lodgementReference;
       break;
     }
 
     case "NPP_BANK": {
       const f = input.fields as NppBankFields;
-      // NPP to bank account (not PayID)
-      d0.disbursementMethod = "NppPayBankAccount";
-      d0.toNppBankAccountDetails = {
+      d0.disbursementMethod = METHOD.NPP_BANK;
+      // Details key follows the method name: NppCreditBankAccount
+      d0.toNppCreditBankAccountDetails = {
         bsbNumber: f.bsbNumber || coerceBsb(f.bsb),
         accountNumber: f.accountNumber,
         accountName: f.accountName,
@@ -140,8 +155,8 @@ export function buildMonoovaPayment(input: BuildInput) {
 
     case "NPP_PAYID": {
       const f = input.fields as NppPayIdFields;
-      d0.disbursementMethod = "NppPayPayId";
-      d0.toNppPayIdDetails = {
+      d0.disbursementMethod = METHOD.NPP_PAYID;
+      d0.toNppCreditPayIdDetails = {
         payId: f.payId,
         payIdType: f.payIdType,
         remitterName: f.remitterName,
@@ -149,14 +164,13 @@ export function buildMonoovaPayment(input: BuildInput) {
       };
       break;
     }
+
     case "BPAY": {
       const f = input.fields as BpayFields;
-      // Docs show lowercase 'bpay' in some examples; TitleCase also accepted in practice.
-      d0.disbursementMethod = "Bpay";
-      // API sample shows `toBPayDetails` (capital P); keep that exact casing.
+      d0.disbursementMethod = METHOD.BPAY;
       d0.toBPayDetails = {
         billerCode: f.billerCode,
-        referenceNumber: f.crn, // CRN maps to referenceNumber
+        referenceNumber: f.crn,
         billerName: f.billerName,
       };
       break;
@@ -164,7 +178,7 @@ export function buildMonoovaPayment(input: BuildInput) {
 
     case "PAY_CHILD_MACCOUNT": {
       const f = input.fields as ChildFields;
-      d0.disbursementMethod = "PayChildMAccount";
+      d0.disbursementMethod = METHOD.PAY_CHILD_MACCOUNT;
       d0.toChildMaccountDetails = {
         mAccountNumber: f.mAccountNumber,
         lodgementReference: f.lodgementReference,
@@ -174,7 +188,7 @@ export function buildMonoovaPayment(input: BuildInput) {
 
     case "DEBIT_CHILD_MACCOUNT": {
       const f = input.fields as ChildFields;
-      d0.disbursementMethod = "DebitChildMAccount";
+      d0.disbursementMethod = METHOD.DEBIT_CHILD_MACCOUNT;
       d0.fromChildMaccountDetails = {
         mAccountNumber: f.mAccountNumber,
         lodgementReference: f.lodgementReference,
