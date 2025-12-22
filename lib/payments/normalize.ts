@@ -1,3 +1,16 @@
+// lib/payments/normalize.ts
+// Canonical Monoova methods are lowercase.
+export const METHOD = {
+  DIRECT_CREDIT_DE: "directcredit",
+  DIRECT_DEBIT: "directdebit",
+  TOKEN: "token", // direct credit to a bank-account token
+  NPP_BANK: "nppcreditbankaccount",
+  NPP_PAYID: "nppcreditpayid",
+  BPAY: "bpay",
+  PAY_CHILD_MACCOUNT: "paychildmaccount",
+  DEBIT_CHILD_MACCOUNT: "debitchildmaccount",
+} as const;
+
 export type Rail =
   | "DIRECT_CREDIT_DE"
   | "DIRECT_CREDIT_TOKEN"
