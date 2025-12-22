@@ -17,7 +17,7 @@ export async function fetchMonoova(
   mode: Mode = cookieMode()
 ) {
   const cfg = monoovaConfig(mode);
-  const url = `${cfg.base}/${path.replace(/^\\/+/, "")}`;
+  const url = `${cfg.base}/${path.replace(/^\/+/, "")}`;
 
   const headers = new Headers(init.headers || {});
   if (!headers.has("authorization") && mode !== "MOCK") {
