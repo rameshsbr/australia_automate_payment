@@ -1,81 +1,290 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Popover } from "@/components/ui";
 
-/** One-time transfer choices (top of the dropdown) */
-type ToType = "bank" | "bpay" | "monoova" | undefined;
+type PaymentRail =
+  | "directCredit"
+  | "directDebit"
+  | "tokenCredit"
+  | "tokenDebit"
+  | "nppBank"
+  | "nppPayId"
+  | "bpay"
+  | "childCredit"
+  | "childDebit";
 
-/** Minimal payees list plumbing (kept empty by default).
- *  When you hook data later, populate this from API.
- */
-type Payee = {
-  id: string;
-  kind: "bank" | "bpay" | "monoova";
-  label: string;
-  sublabel?: string;
+type PayIdType = "Email" | "Phone" | "ABN" | "OrganisationId";
+
+const RAIL_LABELS: Record<PaymentRail, string> = {
+  directCredit: "Direct Credit (DE)",
+  directDebit: "Direct Debit (DE)",
+  tokenCredit: "DE token credit",
+  tokenDebit: "DE token debit",
+  nppBank: "NPP – Bank Account",
+  nppPayId: "NPP – PayID",
+  bpay: "BPAY",
+  childCredit: "Pay child mAccount",
+  childDebit: "Debit child mAccount",
 };
-const PAYEES: Payee[] = []; // ← leave empty per your instruction
 
 export default function NewSinglePaymentPage() {
-  const [toType, setToType] = useState<ToType>(undefined);
+  const [rail, setRail] = useState<PaymentRail>("directCredit");
   const [showOptional, setShowOptional] = useState(false);
 
-  // ------- Shared form state (kept empty) -------
-  // Bank
-  const [bankAccountName, setBankAccountName] = useState("");
-  const [bankBsb, setBankBsb] = useState("");
-  const [bankAccountNumber, setBankAccountNumber] = useState("");
-  const [bankAmount, setBankAmount] = useState("");
-  const [bankDesc, setBankDesc] = useState("");
-  const [bankUniqueRef, setBankUniqueRef] = useState("");
-  const [bankLodgementRef, setBankLodgementRef] = useState("");
-  const [bankRemitter, setBankRemitter] = useState("");
+  const [callerUniqueReference, setCallerUniqueReference] = useState("demo-1");
+  const [amount, setAmount] = useState("1.00");
+  const [currency] = useState("AUD");
+  const [bsbNumber, setBsbNumber] = useState("062000");
+  const [accountNumber, setAccountNumber] = useState("12345678");
+  const [accountName, setAccountName] = useState("Demo");
+  const [lodgementReference, setLodgementReference] = useState("Test");
+  const [remitterName, setRemitterName] = useState("Demo");
+  const [token, setToken] = useState("");
+  const [payId, setPayId] = useState("payid@example.com");
+  const [payIdType, setPayIdType] = useState<PayIdType>("Email");
+  const [billerCode, setBillerCode] = useState("123456");
+  const [billerReference, setBillerReference] = useState("123456789");
+  const [childMaccount, setChildMaccount] = useState("");
 
-  // BPAY
-  const [bpayCode, setBpayCode] = useState("");
-  const [bpayRef, setBpayRef] = useState("");
-  const [bpayAmount, setBpayAmount] = useState("");
-  const [bpayDesc, setBpayDesc] = useState("");
-  const [bpayUniqueRef, setBpayUniqueRef] = useState("");
-  const [bpayLodgementRef, setBpayLodgementRef] = useState("");
-  const [bpayRemitter, setBpayRemitter] = useState("");
+  const [payloadPreview, setPayloadPreview] = useState<string>("");
+  const [result, setResult] = useState<string>("");
+  const [error, setError] = useState<string>("");
+  const [submitting, setSubmitting] = useState(false);
 
-  // Monoova account
-  const [maccId, setMaccId] = useState("");
-  const [maccAmount, setMaccAmount] = useState("");
-  const [maccDesc, setMaccDesc] = useState("");
-  const [maccUniqueRef, setMaccUniqueRef] = useState("");
-  const [maccLodgementRef, setMaccLodgementRef] = useState("");
-  const [maccRemitter, setMaccRemitter] = useState("");
+  const railFields = useMemo(() => {
+    switch (rail) {
+      case "directCredit":
+      case "directDebit":
+        return (
+          <div className="space-y-4 mt-4">
+            <LabeledInput label="BSB" value={bsbNumber} onChange={setBsbNumber} />
+            <LabeledInput label="Account number" value={accountNumber} onChange={setAccountNumber} />
+            <LabeledInput label="Account name" value={accountName} onChange={setAccountName} />
+            {showOptional && (
+              <>
+                <LabeledInput
+                  label="Lodgement reference (optional)"
+                  value={lodgementReference}
+                  onChange={setLodgementReference}
+                />
+              </>
+            )}
+          </div>
+        );
+      case "tokenCredit":
+      case "tokenDebit":
+        return (
+          <div className="space-y-4 mt-4">
+            <LabeledInput label="Token" value={token} onChange={setToken} />
+          </div>
+        );
+      case "nppBank":
+        return (
+          <div className="space-y-4 mt-4">
+            <LabeledInput label="BSB" value={bsbNumber} onChange={setBsbNumber} />
+            <LabeledInput label="Account number" value={accountNumber} onChange={setAccountNumber} />
+            <LabeledInput label="Account name" value={accountName} onChange={setAccountName} />
+            {showOptional && (
+              <>
+                <LabeledInput
+                  label="Lodgement reference (optional)"
+                  value={lodgementReference}
+                  onChange={setLodgementReference}
+                />
+              </>
+            )}
+          </div>
+        );
+      case "nppPayId":
+        return (
+          <div className="space-y-4 mt-4">
+            <LabeledInput label="PayID" value={payId} onChange={setPayId} />
+            <LabeledSelect
+              label="PayID type"
+              value={payIdType}
+              onChange={(v) => setPayIdType(v as PayIdType)}
+              options={[
+                { label: "Email", value: "Email" },
+                { label: "Phone", value: "Phone" },
+                { label: "ABN", value: "ABN" },
+                { label: "OrganisationId", value: "OrganisationId" },
+              ]}
+            />
+            {showOptional && (
+              <>
+                <LabeledInput
+                  label="Remitter name (optional)"
+                  value={remitterName}
+                  onChange={setRemitterName}
+                />
+                <LabeledInput
+                  label="Lodgement reference (optional)"
+                  value={lodgementReference}
+                  onChange={setLodgementReference}
+                />
+              </>
+            )}
+          </div>
+        );
+      case "bpay":
+        return (
+          <div className="space-y-4 mt-4">
+            <LabeledInput label="Biller code" value={billerCode} onChange={setBillerCode} />
+            <LabeledInput label="Customer reference" value={billerReference} onChange={setBillerReference} />
+          </div>
+        );
+      case "childCredit":
+      case "childDebit":
+        return (
+          <div className="space-y-4 mt-4">
+            <LabeledInput
+              label={rail === "childCredit" ? "Child mAccount number" : "Debit child mAccount"}
+              value={childMaccount}
+              onChange={setChildMaccount}
+            />
+          </div>
+        );
+      default:
+        return null;
+    }
+  }, [rail, bsbNumber, accountNumber, accountName, showOptional, lodgementReference, token, payId, payIdType, remitterName, billerCode, billerReference, childMaccount]);
 
-  const onPickTo = (kind: ToType) => setToType(kind);
+  const buildDisbursement = () => {
+    const base = { type: "DE", amount, currency } as Record<string, any>;
 
-  // Optional drawer is shared between forms
+    if (rail === "directCredit") {
+      return {
+        ...base,
+        disbursementMethod: "DirectCredit",
+        toDirectCreditDetails: compact({
+          bsbNumber,
+          accountNumber,
+          accountName,
+          lodgementReference,
+        }),
+      };
+    }
+
+    if (rail === "directDebit") {
+      return {
+        ...base,
+        disbursementMethod: "DirectDebit",
+        toDirectDebitDetails: compact({
+          bsbNumber,
+          accountNumber,
+          accountName,
+        }),
+      };
+    }
+
+    if (rail === "tokenCredit") {
+      return {
+        ...base,
+        toDirectCreditUsingTokenDetails: compact({ token }),
+      };
+    }
+
+    if (rail === "tokenDebit") {
+      return {
+        ...base,
+        toDirectDebitUsingTokenDetails: compact({ token }),
+      };
+    }
+
+    if (rail === "nppBank") {
+      return {
+        ...base,
+        toNppBankAccountDetails: compact({
+          bsbNumber,
+          accountNumber,
+          accountName,
+          lodgementReference,
+        }),
+      };
+    }
+
+    if (rail === "nppPayId") {
+      return {
+        ...base,
+        toNppPayIdDetails: compact({
+          payId,
+          payIdType,
+          remitterName,
+          lodgementReference,
+        }),
+      };
+    }
+
+    if (rail === "bpay") {
+      return {
+        ...base,
+        toBpayDetails: compact({ billerCode, crn: billerReference }),
+      };
+    }
+
+    if (rail === "childCredit") {
+      return {
+        ...base,
+        toChildMaccountDetails: compact({ mAccountNumber: childMaccount }),
+      };
+    }
+
+    if (rail === "childDebit") {
+      return {
+        ...base,
+        fromChildMaccountDetails: compact({ mAccountNumber: childMaccount }),
+      };
+    }
+
+    return base;
+  };
+
+  const handleSubmit = async () => {
+    const disbursement = buildDisbursement();
+    const payload = {
+      callerUniqueReference,
+      source: { type: "mAccount" },
+      disbursements: [disbursement],
+    };
+
+    setPayloadPreview(JSON.stringify(payload, null, 2));
+    setSubmitting(true);
+    setError("");
+    setResult("");
+
+    try {
+      const resp = await fetch("/api/internal/payments/validate", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const text = await resp.text();
+      setResult(text);
+      if (!resp.ok) setError(`Request failed with ${resp.status}`);
+    } catch (err: any) {
+      setError(err?.message || "Request failed");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const OptionalSection = (
-    <>
+    <div className="mt-3">
       <button
         type="button"
-        className="mt-3 inline-flex items-center justify-between w-full bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm"
+        className="inline-flex items-center justify-between w-full bg-panel border border-outline/40 rounded-lg h-9 px-3 text-sm"
         onClick={() => setShowOptional((v) => !v)}
       >
         <span>Show optional fields</span>
         <span className="text-subt">{showOptional ? "▴" : "▾"}</span>
       </button>
-
-      {showOptional && (
-        <div className="mt-3 space-y-4">
-          {/* These inputs are rendered by each form with its own state */}
-          {/* The labels + helper copy match your screenshots */}
-        </div>
-      )}
-    </>
+    </div>
   );
 
   return (
     <>
-      {/* Back crumb (top-left) */}
       <div className="mb-2">
         <Link href="/payments/review" className="text-sm text-subt hover:underline">
           ← Payments
@@ -84,13 +293,10 @@ export default function NewSinglePaymentPage() {
 
       <h1 className="text-2xl font-semibold mb-6">New single payment</h1>
 
-      {/* Main card */}
-      <div className="max-w-3xl bg-panel rounded-xl2 border border-outline/40 p-4 md:p-6">
-        {/* FROM */}
-        <section className="mb-4">
+      <div className="max-w-3xl bg-panel rounded-xl2 border border-outline/40 p-4 md:p-6 space-y-4">
+        <section>
           <div className="text-sm font-medium mb-2">From</div>
           <div className="flex items-center justify-between bg-surface border border-outline/40 rounded-lg px-3 py-3">
-            {/* Keep data empty for now; wire it later */}
             <div>
               <div className="text-sm">—</div>
               <div className="text-xs text-subt">—</div>
@@ -102,10 +308,8 @@ export default function NewSinglePaymentPage() {
           </div>
         </section>
 
-        {/* TO PICKER */}
-        <section className="mb-4">
-          <div className="text-sm font-medium mb-2">To</div>
-
+        <section>
+          <div className="text-sm font-medium mb-2">Payment rail</div>
           <Popover
             className="w-[520px]"
             button={({ open }) => (
@@ -113,128 +317,45 @@ export default function NewSinglePaymentPage() {
                 type="button"
                 className="w-full bg-surface border border-outline/40 rounded-lg h-10 px-3 text-left text-sm inline-flex items-center justify-between"
               >
-                <span className={toType ? "" : "text-subt/70"}>
-                  {toType === "bank" && "Bank account"}
-                  {toType === "bpay" && "Bpay biller"}
-                  {toType === "monoova" && "Monoova account"}
-                  {!toType && "Select an item"}
-                </span>
+                <span>{RAIL_LABELS[rail]}</span>
                 <span className="text-subt ml-2">{open ? "▴" : "▾"}</span>
               </button>
             )}
           >
             <div className="text-sm">
-              <div className="px-2 pt-2 pb-1 text-subt uppercase tracking-wide text-[11px]">
-                One time transfer
-              </div>
               <div className="py-1">
-                <DropdownRow label="Bank account" icon="🏦" onClick={() => onPickTo("bank")} />
-                <DropdownRow label="Bpay biller" icon="🅱️" onClick={() => onPickTo("bpay")} />
-                <DropdownRow label="Monoova account" icon="〽️" onClick={() => onPickTo("monoova")} />
-              </div>
-
-              <div className="px-2 pt-3 pb-1 text-subt uppercase tracking-wide text-[11px]">
-                Payees
-              </div>
-              <div className="py-1">
-                {PAYEES.length === 0 && (
-                  <div className="px-2 py-2 text-subt text-xs">No payees yet</div>
-                )}
-                {PAYEES.map((p) => (
-                  <button
-                    key={p.id}
-                    className="w-full text-left px-2 py-2 rounded hover:bg-panel/60 flex items-center gap-2"
-                    onClick={() => onPickTo(p.kind)}
-                  >
-                    <span className="text-lg">👤</span>
-                    <div>
-                      <div className="text-sm">{p.label}</div>
-                      {p.sublabel && <div className="text-xs text-subt">{p.sublabel}</div>}
-                    </div>
-                  </button>
+                {(
+                  [
+                    "directCredit",
+                    "directDebit",
+                    "tokenCredit",
+                    "tokenDebit",
+                    "nppBank",
+                    "nppPayId",
+                    "bpay",
+                    "childCredit",
+                    "childDebit",
+                  ] as PaymentRail[]
+                ).map((key) => (
+                  <DropdownRow key={key} label={RAIL_LABELS[key]} onClick={() => setRail(key)} />
                 ))}
               </div>
             </div>
           </Popover>
         </section>
 
-        {/* FORMS */}
-        {toType === "bank" && (
-          <BankForm
-            values={{
-              accountName: bankAccountName,
-              bsb: bankBsb,
-              accountNumber: bankAccountNumber,
-              amount: bankAmount,
-              desc: bankDesc,
-              uniqueRef: bankUniqueRef,
-              lodgementRef: bankLodgementRef,
-              remitter: bankRemitter,
-            }}
-            onChange={{
-              setAccountName: setBankAccountName,
-              setBsb: setBankBsb,
-              setAccountNumber: setBankAccountNumber,
-              setAmount: setBankAmount,
-              setDesc: setBankDesc,
-              setUniqueRef: setBankUniqueRef,
-              setLodgementRef: setBankLodgementRef,
-              setRemitter: setBankRemitter,
-            }}
-            OptionalSection={OptionalSection}
-            showOptional={showOptional}
+        <section className="space-y-4">
+          <LabeledInput
+            label="Caller unique reference"
+            value={callerUniqueReference}
+            onChange={setCallerUniqueReference}
+            helper="Used to prevent duplicate payments"
           />
-        )}
+          <AmountInput label="Amount" value={amount} onChange={setAmount} currency={currency} />
+          {railFields}
+          {OptionalSection}
+        </section>
 
-        {toType === "bpay" && (
-          <BpayForm
-            values={{
-              billerCode: bpayCode,
-              reference: bpayRef,
-              amount: bpayAmount,
-              desc: bpayDesc,
-              uniqueRef: bpayUniqueRef,
-              lodgementRef: bpayLodgementRef,
-              remitter: bpayRemitter,
-            }}
-            onChange={{
-              setBillerCode: setBpayCode,
-              setReference: setBpayRef,
-              setAmount: setBpayAmount,
-              setDesc: setBpayDesc,
-              setUniqueRef: setBpayUniqueRef,
-              setLodgementRef: setBpayLodgementRef,
-              setRemitter: setBpayRemitter,
-            }}
-            OptionalSection={OptionalSection}
-            showOptional={showOptional}
-          />
-        )}
-
-        {toType === "monoova" && (
-          <MaccForm
-            values={{
-              accountId: maccId,
-              amount: maccAmount,
-              desc: maccDesc,
-              uniqueRef: maccUniqueRef,
-              lodgementRef: maccLodgementRef,
-              remitter: maccRemitter,
-            }}
-            onChange={{
-              setAccountId: setMaccId,
-              setAmount: setMaccAmount,
-              setDesc: setMaccDesc,
-              setUniqueRef: setMaccUniqueRef,
-              setLodgementRef: setMaccLodgementRef,
-              setRemitter: setMaccRemitter,
-            }}
-            OptionalSection={OptionalSection}
-            showOptional={showOptional}
-          />
-        )}
-
-        {/* ACTIONS (always visible like your shots) */}
         <div className="mt-4 flex items-center gap-3">
           <Link
             href="/payments/review"
@@ -243,210 +364,64 @@ export default function NewSinglePaymentPage() {
             ← Back
           </Link>
           <button
-            className="ml-auto inline-flex items-center justify-center bg-[#6d44c9] rounded-lg h-9 px-5 text-sm"
-            // disabled until required fields are filled; keep enabled state wiring for later
+            className="ml-auto inline-flex items-center justify-center bg-[#6d44c9] rounded-lg h-9 px-5 text-sm text-white disabled:opacity-60"
             type="button"
+            onClick={handleSubmit}
+            disabled={submitting}
           >
-            Review →
+            {submitting ? "Submitting..." : "Validate →"}
           </button>
         </div>
+
+        {(payloadPreview || result || error) && (
+          <div className="mt-4 space-y-3 text-sm">
+            {payloadPreview && (
+              <div>
+                <div className="text-subt text-xs mb-1">Payload preview</div>
+                <pre className="bg-surface border border-outline/40 rounded-lg p-3 text-xs whitespace-pre-wrap">{payloadPreview}</pre>
+              </div>
+            )}
+            {result && (
+              <div>
+                <div className="text-subt text-xs mb-1">API response</div>
+                <pre className="bg-surface border border-outline/40 rounded-lg p-3 text-xs whitespace-pre-wrap">{result}</pre>
+              </div>
+            )}
+            {error && <div className="text-red-500">{error}</div>}
+          </div>
+        )}
       </div>
     </>
   );
 }
 
-/* ---------- Small helpers & sub-forms ---------- */
-
-function DropdownRow({
-  icon,
-  label,
-  onClick,
-}: { icon: string; label: string; onClick: () => void }) {
+function DropdownRow({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
       type="button"
       className="w-full text-left px-2 py-2 rounded hover:bg-panel/60 flex items-center gap-2"
       onClick={onClick}
     >
-      <span className="text-lg">{icon}</span>
       <span>{label}</span>
     </button>
   );
 }
 
-/** BANK FORM */
-function BankForm({
-  values,
-  onChange,
-  OptionalSection,
-  showOptional,
-}: {
-  values: {
-    accountName: string;
-    bsb: string;
-    accountNumber: string;
-    amount: string;
-    desc: string;
-    uniqueRef: string;
-    lodgementRef: string;
-    remitter: string;
-  };
-  onChange: {
-    setAccountName: (v: string) => void;
-    setBsb: (v: string) => void;
-    setAccountNumber: (v: string) => void;
-    setAmount: (v: string) => void;
-    setDesc: (v: string) => void;
-    setUniqueRef: (v: string) => void;
-    setLodgementRef: (v: string) => void;
-    setRemitter: (v: string) => void;
-  };
-  OptionalSection: JSX.Element;
-  showOptional: boolean;
-}) {
-  return (
-    <div className="mt-4 space-y-4">
-      <LabeledInput label="Account name" value={values.accountName} onChange={onChange.setAccountName} />
-      <LabeledInput label="BSB" value={values.bsb} onChange={onChange.setBsb} />
-      <LabeledInput label="Account number" value={values.accountNumber} onChange={onChange.setAccountNumber} />
-      <AmountInput label="Amount" value={values.amount} onChange={onChange.setAmount} />
-      <LabeledTextArea
-        label="Description"
-        helper="This is an internal field and will appear in mAccounts statements. Only alphanumeric characters, spaces, commas, periods and dollar signs are allowed"
-        value={values.desc}
-        onChange={onChange.setDesc}
-      />
-
-      {OptionalSection}
-
-      {showOptional && (
-        <div className="mt-3 space-y-4">
-          <UniqueRefInput value={values.uniqueRef} onChange={onChange.setUniqueRef} />
-          <LabeledInput label="Lodgement reference (optional)" value={values.lodgementRef} onChange={onChange.setLodgementRef} />
-          <LabeledInput label="Remitter name (optional)" value={values.remitter} onChange={onChange.setRemitter} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** BPAY FORM */
-function BpayForm({
-  values,
-  onChange,
-  OptionalSection,
-  showOptional,
-}: {
-  values: {
-    billerCode: string;
-    reference: string;
-    amount: string;
-    desc: string;
-    uniqueRef: string;
-    lodgementRef: string;
-    remitter: string;
-  };
-  onChange: {
-    setBillerCode: (v: string) => void;
-    setReference: (v: string) => void;
-    setAmount: (v: string) => void;
-    setDesc: (v: string) => void;
-    setUniqueRef: (v: string) => void;
-    setLodgementRef: (v: string) => void;
-    setRemitter: (v: string) => void;
-  };
-  OptionalSection: JSX.Element;
-  showOptional: boolean;
-}) {
-  return (
-    <div className="mt-4 space-y-4">
-      <LabeledInput label="Biller code" value={values.billerCode} onChange={onChange.setBillerCode} />
-      <LabeledInput label="Reference number" value={values.reference} onChange={onChange.setReference} />
-      <AmountInput label="Amount" value={values.amount} onChange={onChange.setAmount} />
-      <LabeledTextArea
-        label="Description"
-        helper="This is an internal field and will appear in mAccounts statements. Only alphanumeric characters, spaces, commas, periods and dollar signs are allowed"
-        value={values.desc}
-        onChange={onChange.setDesc}
-      />
-
-      {OptionalSection}
-
-      {showOptional && (
-        <div className="mt-3 space-y-4">
-          <UniqueRefInput value={values.uniqueRef} onChange={onChange.setUniqueRef} />
-          <LabeledInput label="Lodgement reference (optional)" value={values.lodgementRef} onChange={onChange.setLodgementRef} />
-          <LabeledInput label="Remitter name (optional)" value={values.remitter} onChange={onChange.setRemitter} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** MONOOVA ACCOUNT FORM */
-function MaccForm({
-  values,
-  onChange,
-  OptionalSection,
-  showOptional,
-}: {
-  values: {
-    accountId: string;
-    amount: string;
-    desc: string;
-    uniqueRef: string;
-    lodgementRef: string;
-    remitter: string;
-  };
-  onChange: {
-    setAccountId: (v: string) => void;
-    setAmount: (v: string) => void;
-    setDesc: (v: string) => void;
-    setUniqueRef: (v: string) => void;
-    setLodgementRef: (v: string) => void;
-    setRemitter: (v: string) => void;
-  };
-  OptionalSection: JSX.Element;
-  showOptional: boolean;
-}) {
-  return (
-    <div className="mt-4 space-y-4">
-      <LabeledInput label="Monoova account ID" value={values.accountId} onChange={onChange.setAccountId} />
-      <AmountInput label="Amount" value={values.amount} onChange={onChange.setAmount} />
-      <LabeledTextArea
-        label="Description"
-        helper="This is an internal field and will appear in mAccounts statements. Only alphanumeric characters, spaces, commas, periods and dollar signs are allowed"
-        value={values.desc}
-        onChange={onChange.setDesc}
-      />
-
-      {OptionalSection}
-
-      {showOptional && (
-        <div className="mt-3 space-y-4">
-          <UniqueRefInput value={values.uniqueRef} onChange={onChange.setUniqueRef} />
-          <LabeledInput label="Lodgement reference (optional)" value={values.lodgementRef} onChange={onChange.setLodgementRef} />
-          <LabeledInput label="Remitter name (optional)" value={values.remitter} onChange={onChange.setRemitter} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* ----------- leaf inputs (shared look & feel) ----------- */
-
 function LabeledInput({
   label,
   value,
   onChange,
+  helper,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  helper?: string;
 }) {
   return (
     <label className="block">
       <div className="text-sm mb-1">{label}</div>
+      {helper && <div className="text-xs text-subt mb-2">{helper}</div>}
       <input
         className="w-full bg-surface border border-outline/40 rounded-lg h-10 px-3 text-sm"
         value={value}
@@ -456,26 +431,31 @@ function LabeledInput({
   );
 }
 
-function LabeledTextArea({
+function LabeledSelect({
   label,
-  helper,
   value,
   onChange,
+  options,
 }: {
   label: string;
-  helper?: string;
   value: string;
   onChange: (v: string) => void;
+  options: { label: string; value: string }[];
 }) {
   return (
     <label className="block">
       <div className="text-sm mb-1">{label}</div>
-      {helper && <div className="text-xs text-subt mb-2">{helper}</div>}
-      <textarea
-        className="w-full bg-surface border border-outline/40 rounded-lg px-3 py-2 text-sm min-h-[84px]"
+      <select
+        className="w-full bg-surface border border-outline/40 rounded-lg h-10 px-3 text-sm"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-      />
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>
+            {o.label}
+          </option>
+        ))}
+      </select>
     </label>
   );
 }
@@ -484,16 +464,18 @@ function AmountInput({
   label,
   value,
   onChange,
+  currency,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
+  currency: string;
 }) {
   return (
     <label className="block">
       <div className="text-sm mb-1">{label}</div>
       <div className="flex items-center bg-surface border border-outline/40 rounded-lg h-10 px-2">
-        <span className="px-2 text-subt">$</span>
+        <span className="px-2 text-subt">{currency}</span>
         <input
           className="flex-1 bg-transparent outline-none text-sm px-1"
           value={value}
@@ -505,30 +487,6 @@ function AmountInput({
   );
 }
 
-function UniqueRefInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <label className="block">
-      <div className="text-sm mb-1">Unique reference</div>
-      <div className="text-xs text-subt mb-2">
-        This is an internal field used by the system to prevent duplicate payments. This field has to be a unique value in our system
-      </div>
-      <div className="flex items-center bg-surface border border-outline/40 rounded-lg h-10 px-2">
-        <input
-          className="flex-1 bg-transparent outline-none text-sm px-1"
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder=""
-        />
-        {/* rotate/refresh icon placeholder (no auto-fill per your note) */}
-        <span className="text-subt px-2">⟲</span>
-      </div>
-    </label>
-  );
+function compact<T extends Record<string, any>>(obj: T) {
+  return Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== undefined && v !== ""));
 }
-

@@ -1,49 +1,39 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { env } from "@/lib/env";
-import { prisma } from "@/lib/prisma";
-import { Environment } from "@prisma/client";
+import { authHeaderForPath, monoovaConfig } from "@/lib/monoova";
 
-// WHY: This endpoint ensures the provider only sees OUR keys, never client keys.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const envCookie = (req.cookies["env"] ?? "SANDBOX") as "SANDBOX" | "LIVE";
-  const cfg = env.provider[envCookie];
+  const mode = (req.cookies["env"]?.toUpperCase() as "SANDBOX" | "LIVE") || "SANDBOX";
+  const cfg = monoovaConfig(mode);
 
   const path = (req.query.path as string[]).join("/");
-  const url = `${cfg.base}/${path}${req.url?.includes("?") ? "?" + req.url?.split("?")[1] : ""}`;
+  const query = req.url?.includes("?") ? `?${req.url.split("?")[1]}` : "";
+  const url = `${cfg.base}/${path}${query}`;
 
-  const method = req.method ?? "GET";
-  if (!["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) {
-    res.status(405).json({ error: "Method not allowed" });
-    return;
-  }
+  const method = (req.method || "GET").toUpperCase();
+  const body =
+    method === "GET" || method === "HEAD"
+      ? undefined
+      : typeof req.body === "string"
+      ? req.body
+      : JSON.stringify(req.body ?? {});
 
-  // Remove hop-by-hop headers
-  const { host, connection, "content-length": _cl, ...forwardHeaders } = req.headers as Record<string, string>;
+  const auth = await authHeaderForPath(path, mode);
+
+  // strip hop-by-hop headers
+  const { host, connection, "content-length": _cl, ...forward } = (req.headers as any) || {};
 
   const upstream = await fetch(url, {
     method,
     headers: {
-      ...forwardHeaders,
-      authorization: `Bearer ${cfg.key}`
+      ...forward,
+      authorization: auth,
+      accept: forward.accept || "application/json",
+      "content-type": forward["content-type"] || "application/json",
     },
-    body: ["GET", "HEAD"].includes(method) ? undefined : (req as any)
+    body,
   });
 
-  const data = await upstream.text();
   res.status(upstream.status);
-  for (const [k, v] of upstream.headers) res.setHeader(k, v);
-  res.send(data);
-
-  // Fire-and-forget log (best-effort)
-  prisma.apiLog.create({
-    data: {
-      organizationId: (await prisma.organization.findFirst())!.id,
-      environment: envCookie as Environment,
-      path: `/${path}`,
-      method,
-      status: upstream.status,
-      reqBody: ["GET", "HEAD"].includes(method) ? undefined : (req.body ?? null),
-      resBody: (() => { try { return JSON.parse(data); } catch { return null; } })()
-    }
-  }).catch(() => {});
+  upstream.headers.forEach((v, k) => res.setHeader(k, v));
+  res.send(await upstream.text());
 }
