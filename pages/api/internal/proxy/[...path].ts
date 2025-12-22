@@ -1,4 +1,6 @@
 // pages/api/internal/proxy/[...path].ts
+import fs from "fs";
+import nodePath from "path";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { authHeaderForPath, monoovaConfig } from "@/lib/monoova";
 
@@ -42,6 +44,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let authScheme = "none";
 
     if (mode === "MOCK") {
+      const mockResult = serveMock(path, req.method || "GET");
+      if (mockResult) {
+        res.setHeader("content-type", "application/json");
+        res.setHeader("x-proxy-mode", mode);
+        res.setHeader("x-proxy-target", "mock_fixture");
+        res.setHeader("x-proxy-auth-scheme", "none");
+        return res.status(mockResult.status).json(mockResult.body);
+      }
       base = process.env.MONOOVA_BASE_MOCK || "http://localhost:4010";
       auth = undefined;
       authScheme = "mock";
@@ -94,12 +104,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     });
 
-    // Debug headers from proxy (only when requested)
+    // Debug headers from proxy
     if (debug) {
-      res.setHeader("x-proxy-mode", mode);
       res.setHeader("x-proxy-target", url);
-      res.setHeader("x-proxy-auth-scheme", authScheme);
     }
+    res.setHeader("x-proxy-mode", mode);
+    res.setHeader("x-proxy-auth-scheme", authScheme);
 
     try {
       res.send(JSON.parse(text));
@@ -109,4 +119,48 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "proxy_error" });
   }
+}
+
+function serveMock(pathname: string, method: string) {
+  const mocksRoot = nodePath.join(process.cwd(), "mocks", "monoova");
+  const normalized = pathname.replace(/^\/+/, "");
+
+  const candidates: { match: (p: string) => boolean; file: string; status?: number }[] = [
+    {
+      match: (p) => p === "financial/v2/transaction/validate" && method === "POST",
+      file: "financial/validate.ok.json",
+    },
+    {
+      match: (p) => p === "financial/v2/transaction/execute" && method === "POST",
+      file: "financial/execute.ok.json",
+    },
+    {
+      match: (p) => p.startsWith("financial/v2/transaction/status/") && method === "GET",
+      file: "financial/status.ok.json",
+    },
+    {
+      match: (p) => p.startsWith("financial/v2/transaction/reports/uncleared/") && method === "GET",
+      file: "financial/uncleared.ok.json",
+    },
+    {
+      match: (p) => p === "public/v1/ping",
+      file: "public/ping.ok.json",
+    },
+  ];
+
+  for (const cand of candidates) {
+    if (cand.match(normalized)) {
+      const filePath = nodePath.join(mocksRoot, cand.file);
+      if (fs.existsSync(filePath)) {
+        try {
+          const body = JSON.parse(fs.readFileSync(filePath, "utf8"));
+          return { status: cand.status ?? 200, body };
+        } catch {
+          return { status: 500, body: { error: "invalid_mock_fixture" } };
+        }
+      }
+    }
+  }
+
+  return null;
 }
