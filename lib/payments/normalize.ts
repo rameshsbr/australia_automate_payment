@@ -1,185 +1,134 @@
-export type Rail =
-  | "Direct Credit (DE)"
-  | "Direct Credit (Token)"
-  | "Direct Debit (Token)"
-  | "NPP – Bank Account"
-  | "NPP – PayID"
+export type RailKey =
+  | "DE_DIRECT_CREDIT"
+  | "DE_DIRECT_CREDIT_TOKEN"
+  | "DE_DIRECT_DEBIT_TOKEN"
+  | "NPP_BANK"
+  | "NPP_PAYID"
   | "BPAY"
-  | "Pay Child mAccount"
-  | "Debit Child mAccount";
+  | "PAY_CHILD"
+  | "DEBIT_CHILD";
 
 export type BaseForm = {
-  amount: string;
-  currency: string;
-  reference?: string;
-};
+  callerUniqueReference: string;
+  sourceType: "mAccount";
+  amount: string;              // e.g. "1.00"
+  currency: "AUD";
+  rail: RailKey;
 
-export type DirectEntryFields = {
-  bsb?: string;
+  // shared-ish fields
+  lodgementReference?: string;
+  accountName?: string;
+
+  // DC/NPP bank
   bsbNumber?: string;
   accountNumber?: string;
-  accountName?: string;
-};
 
-export type PayIdFields = {
+  // PayID
   payId?: string;
-  payIdType?: "Email" | "Phone" | "ABN" | "OrgId";
-  remitterName?: string;
-};
+  payIdType?: "Email" | "Mobile" | "ABN" | "OrganisationId" | "Username";
 
-export type BpayFields = {
+  // Tokens
+  token?: string;
+
+  // BPAY
   billerCode?: string;
   crn?: string;
   billerName?: string;
-};
 
-export type TokenFields = {
-  token?: string;
-};
-
-export type ChildFields = {
+  // Child mAccount
   mAccountNumber?: string;
 };
 
-export type RailSpecific =
-  | DirectEntryFields
-  | PayIdFields
-  | BpayFields
-  | TokenFields
-  | ChildFields;
-
-export type NormalizeInput = BaseForm & {
-  rail: Rail;
-  callerUniqueReference: string;
-  source: { type: "mAccount" };
-  fields: RailSpecific;
-};
-
-function pickBSB(v?: string) {
-  return v?.replace(/\D/g, "");
-}
-
-export function buildMonoovaDisbursement(input: NormalizeInput) {
-  const { rail, amount, currency, reference, fields } = input;
-  const disb: any = { type: "DE", amount, currency };
-
-  switch (rail) {
-    case "Direct Credit (DE)": {
-      const f = fields as DirectEntryFields;
-      disb.disbursementMethod = "DirectCredit";
-      disb.toDirectCreditDetails = {
-        bsbNumber: f.bsbNumber || pickBSB(f.bsb),
-        accountNumber: f.accountNumber,
-        accountName: f.accountName,
-        lodgementReference: reference,
-      };
-      return disb;
-    }
-
-    case "Direct Credit (Token)": {
-      const f = fields as TokenFields;
-      disb.toDirectCreditUsingTokenDetails = {
-        token: f.token,
-        lodgementReference: reference,
-      };
-      return disb;
-    }
-
-    case "Direct Debit (Token)": {
-      const f = fields as TokenFields;
-      disb.toDirectDebitUsingTokenDetails = {
-        token: f.token,
-        lodgementReference: reference,
-      };
-      return disb;
-    }
-
-    case "NPP – Bank Account": {
-      const f = fields as DirectEntryFields;
-      disb.toNppBankAccountDetails = {
-        bsbNumber: f.bsbNumber || pickBSB(f.bsb),
-        accountNumber: f.accountNumber,
-        accountName: f.accountName,
-        lodgementReference: reference,
-      };
-      return disb;
-    }
-
-    case "NPP – PayID": {
-      const f = fields as PayIdFields;
-      disb.toNppPayIdDetails = {
-        payId: f.payId,
-        payIdType: f.payIdType || "Email",
-        remitterName: f.remitterName,
-        lodgementReference: reference,
-      };
-      return disb;
-    }
-
-    case "BPAY": {
-      const f = fields as BpayFields;
-      disb.toBpayDetails = {
-        billerCode: f.billerCode,
-        crn: f.crn,
-        billerName: f.billerName,
-      };
-      return disb;
-    }
-
-    case "Pay Child mAccount": {
-      const f = fields as ChildFields;
-      disb.toChildMaccountDetails = {
-        mAccountNumber: f.mAccountNumber,
-        lodgementReference: reference,
-      };
-      return disb;
-    }
-
-    case "Debit Child mAccount": {
-      const f = fields as ChildFields;
-      disb.fromChildMaccountDetails = {
-        mAccountNumber: f.mAccountNumber,
-        lodgementReference: reference,
-      };
-      return disb;
-    }
-  }
-}
-
-export function buildMonoovaPayment(input: NormalizeInput) {
-  return {
-    callerUniqueReference: input.callerUniqueReference,
-    source: input.source,
-    disbursements: [buildMonoovaDisbursement(input)],
+export function normalizeToMonoovaPayload(form: BaseForm) {
+  const base = {
+    callerUniqueReference: form.callerUniqueReference,
+    source: { type: "mAccount" as const },
+    disbursements: [
+      {
+        type: "DE" as const,
+        amount: form.amount,
+        currency: form.currency,
+      } as Record<string, any>,
+    ],
   };
+
+  const d = base.disbursements[0];
+
+  switch (form.rail) {
+    case "DE_DIRECT_CREDIT": {
+      d.disbursementMethod = "DirectCredit";
+      d.toDirectCreditDetails = {
+        bsbNumber: form.bsbNumber,
+        accountNumber: form.accountNumber,
+        accountName: form.accountName,
+        lodgementReference: form.lodgementReference,
+      };
+      break;
+    }
+    case "DE_DIRECT_CREDIT_TOKEN": {
+      d.disbursementMethod = "DirectCredit";
+      d.toDirectCreditUsingTokenDetails = {
+        token: form.token,
+        lodgementReference: form.lodgementReference,
+      };
+      break;
+    }
+    case "DE_DIRECT_DEBIT_TOKEN": {
+      d.disbursementMethod = "DirectDebit";
+      d.toDirectDebitUsingTokenDetails = {
+        token: form.token,
+        lodgementReference: form.lodgementReference,
+      };
+      break;
+    }
+    case "NPP_BANK": {
+      d.disbursementMethod = "NppPay";
+      d.toNppBankAccountDetails = {
+        bsbNumber: form.bsbNumber,
+        accountNumber: form.accountNumber,
+        accountName: form.accountName,
+        lodgementReference: form.lodgementReference,
+      };
+      break;
+    }
+    case "NPP_PAYID": {
+      d.disbursementMethod = "NppPay";
+      d.toNppPayIdDetails = {
+        payId: form.payId,
+        payIdType: form.payIdType,
+        remitterName: form.accountName,
+        lodgementReference: form.lodgementReference,
+      };
+      break;
+    }
+    case "BPAY": {
+      d.disbursementMethod = "BpayOut";
+      d.toBpayDetails = {
+        billerCode: form.billerCode,
+        crn: form.crn,
+        billerName: form.billerName,
+      };
+      break;
+    }
+    case "PAY_CHILD": {
+      d.disbursementMethod = "PayChildMaccount";
+      d.toChildMaccountDetails = {
+        mAccountNumber: form.mAccountNumber,
+        lodgementReference: form.lodgementReference,
+      };
+      break;
+    }
+    case "DEBIT_CHILD": {
+      d.disbursementMethod = "DebitChildMaccount";
+      d.fromChildMaccountDetails = {
+        mAccountNumber: form.mAccountNumber,
+        lodgementReference: form.lodgementReference,
+      };
+      break;
+    }
+    default:
+      throw new Error(`Unknown rail: ${form.rail}`);
+  }
+
+  return base;
 }
-
-// Legacy helpers still imported elsewhere; keep a no-op passthrough so API routes compile.
-export function toMonoovaRequest(body: any) {
-  return body;
-}
-
-export const PAYMENT_RAILS: { id: Rail; label: Rail }[] = [
-  { id: "Direct Credit (DE)", label: "Direct Credit (DE)" },
-  { id: "Direct Credit (Token)", label: "Direct Credit (Token)" },
-  { id: "Direct Debit (Token)", label: "Direct Debit (Token)" },
-  { id: "NPP – Bank Account", label: "NPP – Bank Account" },
-  { id: "NPP – PayID", label: "NPP – PayID" },
-  { id: "BPAY", label: "BPAY" },
-  { id: "Pay Child mAccount", label: "Pay Child mAccount" },
-  { id: "Debit Child mAccount", label: "Debit Child mAccount" },
-];
-
-export const RAIL_FIELD_GROUPS: Record<
-  Rail,
-  Array<"deBank" | "token" | "payId" | "bpay" | "child">
-> = {
-  "Direct Credit (DE)": ["deBank"],
-  "Direct Credit (Token)": ["token"],
-  "Direct Debit (Token)": ["token"],
-  "NPP – Bank Account": ["deBank"],
-  "NPP – PayID": ["payId"],
-  BPAY: ["bpay"],
-  "Pay Child mAccount": ["child"],
-  "Debit Child mAccount": ["child"],
-};
