@@ -1,0 +1,16 @@
+{
+  "durationMs": 8,
+  "status": "Ok",
+  "statusDescription": "Report ready",
+  "report": {
+    "items": [
+      {
+        "uniqueReference": "uncleared-1",
+        "amount": 10.5,
+        "date": "2024-01-01",
+        "method": "directdebit"
+      }
+    ],
+    "totalAmount": 10.5
+  }
+}

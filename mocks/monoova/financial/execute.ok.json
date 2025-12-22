@@ -1,0 +1,28 @@
+{
+  "durationMs": 30,
+  "status": "Ok",
+  "statusDescription": "Payment queued",
+  "feeAmountExcludingGst": 0.8,
+  "feeAmountGstComponent": 0.08,
+  "feeAmountIncludingGst": 0.88,
+  "callerUniqueReference": "demo-execute",
+  "feeBreakdown": {
+    "debitFee": {
+      "feeAmountExcludingGst": 0.2,
+      "feeAmountGstComponent": 0.02,
+      "feeAmountIncludingGst": 0.22
+    },
+    "disbursementFees": [
+      {
+        "disbursementArrayIndex": 0,
+        "disbursementFee": {
+          "feeAmountExcludingGst": 0.6,
+          "feeAmountGstComponent": 0.06,
+          "feeAmountIncludingGst": 0.66
+        }
+      }
+    ]
+  },
+  "transactionId": 1000001,
+  "bpayReceipts": []
+}

@@ -1,0 +1,22 @@
+{
+  "durationMs": 25,
+  "status": "Ok",
+  "statusDescription": "Operation completed successfully",
+  "feeAmountExcludingGst": 0.8,
+  "feeAmountGstComponent": 0.08,
+  "feeAmountIncludingGst": 0.88,
+  "callerUniqueReference": "demo-validate",
+  "feeBreakdown": {
+    "disbursementFees": [
+      {
+        "disbursementArrayIndex": 0,
+        "disbursementFee": {
+          "feeAmountExcludingGst": 0.8,
+          "feeAmountGstComponent": 0.08,
+          "feeAmountIncludingGst": 0.88
+        }
+      }
+    ]
+  },
+  "transactionId": 0
+}
