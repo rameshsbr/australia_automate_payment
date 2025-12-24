@@ -8,3 +8,7 @@ export const P_PUBLIC_PING = "/public/v1/ping";
 // Optional BPAY lookups (uncomment if needed by UI and available upstream)
 // export const P_BPAY_BILLERS = "/bpay/v1/billers";
 // export const P_BPAY_BILLER = "/bpay/v1/biller";
+export const notificationPaths = {
+  list: "/au/core/notification-v1/Subscription",
+  byId: (id: string) => `/au/core/notification-v1/Subscription/${encodeURIComponent(id)}`,
+};

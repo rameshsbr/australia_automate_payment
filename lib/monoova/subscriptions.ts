@@ -11,15 +11,18 @@ export type SubscriptionRow = {
   eventName: string;
   callbackUrl: string;
   isActive: boolean;
+  // why: callers may want these in UI later; optional to avoid breaking list mapping
+  emailTo?: string[];
+  emailBcc?: string[];
 };
 
 export type CreateUpdatePayload = {
-  subscriptionName?: string;  // NM only
+  subscriptionName?: string; // NM only
   eventName: string;
   callbackUrl: string;
-  isActive?: boolean;         // NM only
-  emailTo?: string[];         // NM optional
-  emailBcc?: string[];        // NM optional
+  isActive?: boolean;       // NM only
+  emailTo?: string[];       // NM optional
+  emailBcc?: string[];      // NM optional
 };
 
 const reqd = (k: string, v?: string) => {
@@ -28,7 +31,7 @@ const reqd = (k: string, v?: string) => {
 };
 
 function basic(env: MonoovaEnv) {
-  // Why: Monoova Basic auth is username=mAccount, password=API key
+  // why: Monoova Basic auth is username=mAccount, password=API key
   const user =
     env === "sandbox"
       ? reqd("SANDBOX_MACCOUNT", process.env.SANDBOX_MACCOUNT)
@@ -52,15 +55,23 @@ function baseNotification(env: MonoovaEnv) {
     : reqd("MONOOVA_NOTIFICATION_BASE_LIVE", process.env.MONOOVA_NOTIFICATION_BASE_LIVE);
 }
 
+type CallInit = RequestInit & {
+  searchParams?: Record<string, string>;
+  timeoutMs?: number;
+};
+
 async function call(
   service: MonoovaService,
   env: MonoovaEnv,
   path: string,
-  init: RequestInit & { searchParams?: Record<string, string>, timeoutMs?: number } = {}
+  init: CallInit = {}
 ) {
-  const root = service === "notification" ? baseNotification(env) : `${baseLegacy(env)}/subscriptions/v1`;
+  const root =
+    service === "notification" ? baseNotification(env) : `${baseLegacy(env)}/subscriptions/v1`;
   const url = new URL(path.startsWith("http") ? path : `${root}${path}`);
-  if (init.searchParams) for (const [k, v] of Object.entries(init.searchParams)) url.searchParams.set(k, v);
+  if (init.searchParams) {
+    for (const [k, v] of Object.entries(init.searchParams)) url.searchParams.set(k, v);
+  }
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), init.timeoutMs ?? 20000);
@@ -78,24 +89,34 @@ async function call(
     } as any);
 
     const text = await res.text();
-    let body: any; try { body = text ? JSON.parse(text) : undefined; } catch { body = text; }
+    let body: any;
+    try {
+      body = text ? JSON.parse(text) : undefined;
+    } catch {
+      body = text;
+    }
+
     if (!res.ok) {
-      // Why: surface upstream error bodies (401/400/etc.) clearly
+      // why: surface upstream body for easier debugging
       throw new Error(
         `Monoova ${service} ${res.status} ${res.statusText} – ${typeof body === "string" ? body : JSON.stringify(body)}`
       );
     }
     return body;
   } catch (err: any) {
-    // Why: replace generic “fetch failed” with root cause (DNS, TLS, abort)
-    const hint = err?.name === "AbortError" ? "request timed out" : (err?.cause?.code || err?.message || String(err));
+    const hint =
+      err?.name === "AbortError" ? "request timed out" : (err?.cause?.code || err?.message || String(err));
     throw new Error(`Network error calling ${url.hostname}: ${hint}`);
   } finally {
     clearTimeout(timeout);
   }
 }
 
-export async function listSubscriptions(service: MonoovaService, env: MonoovaEnv): Promise<SubscriptionRow[]> {
+/** LIST */
+export async function listSubscriptions(
+  service: MonoovaService,
+  env: MonoovaEnv
+): Promise<SubscriptionRow[]> {
   if (service === "notification") {
     const data = await call("notification", env, "/subscription", { method: "GET" });
     const items = (data?.subscriptiondetails ?? []) as any[];
@@ -106,8 +127,11 @@ export async function listSubscriptions(service: MonoovaService, env: MonoovaEnv
       eventName: s.eventname ?? "",
       callbackUrl: s.webhookdetail?.callbackurl ?? "",
       isActive: Boolean(s.isactive),
+      emailTo: (s.emaildetail?.toaddress ?? []).map((x: any) => x?.address).filter(Boolean),
+      emailBcc: (s.emaildetail?.bccaddress ?? []).map((x: any) => x?.address).filter(Boolean),
     }));
   }
+
   const data = await call("legacy", env, "/list", { method: "GET" });
   const events = (data?.eventname ?? []) as any[];
   return events.map((e) => ({
@@ -120,7 +144,43 @@ export async function listSubscriptions(service: MonoovaService, env: MonoovaEnv
   }));
 }
 
-export async function createSubscription(service: MonoovaService, env: MonoovaEnv, p: CreateUpdatePayload) {
+/** GET BY ID (NM native; Legacy via list+filter fallback) */
+export async function getSubscription(
+  service: MonoovaService,
+  env: MonoovaEnv,
+  id: string
+): Promise<SubscriptionRow | null> {
+  if (!id) return null;
+
+  if (service === "notification") {
+    const s = await call("notification", env, `/subscription/${encodeURIComponent(id)}`, {
+      method: "GET",
+    });
+    if (!s) return null;
+    return {
+      service,
+      subscriptionId: String(s.subscriptionid ?? id),
+      subscriptionName: s.subscriptionname ?? "",
+      eventName: s.eventname ?? "",
+      callbackUrl: s.webhookdetail?.callbackurl ?? "",
+      isActive: Boolean(s.isactive),
+      emailTo: (s.emaildetail?.toaddress ?? []).map((x: any) => x?.address).filter(Boolean),
+      emailBcc: (s.emaildetail?.bccaddress ?? []).map((x: any) => x?.address).filter(Boolean),
+    };
+  }
+
+  // Legacy: no by-id endpoint in your current code; fallback to list+find
+  const all = await listSubscriptions("legacy", env);
+  return all.find((x) => x.subscriptionId === id) ?? null;
+}
+
+/** CREATE (supports Idempotency-Key) */
+export async function createSubscription(
+  service: MonoovaService,
+  env: MonoovaEnv,
+  p: CreateUpdatePayload,
+  opts?: { idempotencyKey?: string }
+) {
   if (service === "notification") {
     const body = {
       subscriptionname: p.subscriptionName ?? p.eventName,
@@ -128,21 +188,39 @@ export async function createSubscription(service: MonoovaService, env: MonoovaEn
       webhookdetail: { callbackurl: p.callbackUrl },
       isactive: p.isActive ?? true,
       ...(p.emailTo || p.emailBcc
-        ? { emaildetail: {
-            toaddress: (p.emailTo ?? []).map((address) => ({ address })),
-            bccaddress: (p.emailBcc ?? []).map((address) => ({ address })),
-          } }
+        ? {
+            emaildetail: {
+              toaddress: (p.emailTo ?? []).map((address) => ({ address })),
+              bccaddress: (p.emailBcc ?? []).map((address) => ({ address })),
+            },
+          }
         : {}),
     };
-    const res = await call("notification", env, "/subscription", { method: "POST", body: JSON.stringify(body) });
+    const res = await call("notification", env, "/subscription", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: opts?.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : undefined,
+    });
     return { subscriptionId: String(res?.subscriptionid ?? "") };
   }
+
   const body = { eventname: p.eventName, targeturl: p.callbackUrl };
-  const res = await call("legacy", env, "/create", { method: "POST", body: JSON.stringify(body) });
+  const res = await call("legacy", env, "/create", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: opts?.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : undefined,
+  });
   return { subscriptionId: String(res?.id ?? "") };
 }
 
-export async function updateSubscription(service: MonoovaService, env: MonoovaEnv, id: string, p: CreateUpdatePayload) {
+/** UPDATE (supports Idempotency-Key) */
+export async function updateSubscription(
+  service: MonoovaService,
+  env: MonoovaEnv,
+  id: string,
+  p: CreateUpdatePayload,
+  opts?: { idempotencyKey?: string }
+) {
   if (service === "notification") {
     const body = {
       subscriptionname: p.subscriptionName ?? p.eventName,
@@ -150,23 +228,32 @@ export async function updateSubscription(service: MonoovaService, env: MonoovaEn
       webhookdetail: { callbackurl: p.callbackUrl },
       isactive: p.isActive ?? true,
       ...(p.emailTo || p.emailBcc
-        ? { emaildetail: {
-            toaddress: (p.emailTo ?? []).map((address) => ({ address })),
-            bccaddress: (p.emailBcc ?? []).map((address) => ({ address })),
-          } }
+        ? {
+            emaildetail: {
+              toaddress: (p.emailTo ?? []).map((address) => ({ address })),
+              bccaddress: (p.emailBcc ?? []).map((address) => ({ address })),
+            },
+          }
         : {}),
     };
     const res = await call("notification", env, `/subscription/${encodeURIComponent(id)}`, {
       method: "PUT",
       body: JSON.stringify(body),
+      headers: opts?.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : undefined,
     });
     return { subscriptionId: String(res?.subscriptionid ?? id) };
   }
+
   const body = { id, eventname: p.eventName, targeturl: p.callbackUrl };
-  const res = await call("legacy", env, "/update", { method: "POST", body: JSON.stringify(body) });
+  const res = await call("legacy", env, "/update", {
+    method: "POST",
+    body: JSON.stringify(body),
+    headers: opts?.idempotencyKey ? { "Idempotency-Key": opts.idempotencyKey } : undefined,
+  });
   return { subscriptionId: String(res?.id ?? id) };
 }
 
+/** DELETE */
 export async function deleteSubscription(service: MonoovaService, env: MonoovaEnv, id: string) {
   if (service === "notification") {
     await call("notification", env, `/subscription/${encodeURIComponent(id)}`, { method: "DELETE" });
