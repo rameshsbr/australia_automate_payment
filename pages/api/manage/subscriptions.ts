@@ -13,7 +13,10 @@ import {
   type CreateUpdatePayload,
 } from "../../../lib/monoova/subscriptions";
 import { z } from "zod";
-import { prisma } from "../../../lib/prisma"; // assumes you export prisma client here
+
+// ——— Prisma import made tolerant to both default and named exports ———
+import * as PrismaExport from "../../../lib/prisma";
+const prisma: any = (PrismaExport as any).default ?? (PrismaExport as any).prisma ?? null;
 
 // Notification Management events (lowercase to match infer logic)
 const NOTIFICATION_EVENTS = [
@@ -74,7 +77,8 @@ async function cacheUpsert(env: string, row: {
   service: string; subscriptionId: string; subscriptionName?: string; eventName: string;
   callbackUrl: string; isActive: boolean; emailTo?: string[]; emailBcc?: string[];
 }) {
-  // why: store arrays as JSON strings to keep schema simple
+  // why: run API without DB during dev; cache is best-effort
+  if (!prisma) return;
   await prisma.subscriptionCache.upsert({
     where: { env_service_subscriptionId: { env, service: row.service, subscriptionId: row.subscriptionId } },
     create: {
@@ -94,6 +98,7 @@ async function cacheUpsert(env: string, row: {
 }
 
 async function cacheDelete(env: string, service: string, id: string) {
+  if (!prisma) return;
   try {
     await prisma.subscriptionCache.delete({
       where: { env_service_subscriptionId: { env, service, subscriptionId: id } },
@@ -154,7 +159,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       const rows = await listSubscriptions(service, q.env);
-      // Keep cache in sync (best effort)
       await Promise.all(rows.map((r) => cacheUpsert(q.env, r)));
       return res.status(200).json({ rows });
     }
@@ -165,7 +169,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const idem = headerStr(req.headers["idempotency-key"]);
       const out = await createSubscription(service, q.env, b, { idempotencyKey: idem || undefined });
 
-      // fetch the created row for cache (best effort)
       if (out?.subscriptionId) {
         const row = await getSubscription(service, q.env, out.subscriptionId);
         if (row) await cacheUpsert(q.env, row);
@@ -181,7 +184,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const idem = headerStr(req.headers["idempotency-key"]);
       const out = await updateSubscription(service, q.env, id, b, { idempotencyKey: idem || undefined });
 
-      // refresh cache
       const row = await getSubscription(service, q.env, out?.subscriptionId ?? id);
       if (row) await cacheUpsert(q.env, row);
       return res.status(200).json({ ...out, service });
@@ -191,7 +193,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const id = toStr(req.query.id);
       if (!id) return res.status(400).json({ error: "id is required" });
 
-      // try NM then legacy; clean cache both
       try {
         await deleteSubscription("notification", q.env, id);
         await cacheDelete(q.env, "notification", id);
