@@ -1,6 +1,7 @@
 // app/(app)/manage/subscriptions/page.tsx
 "use client";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+
+import React, { useEffect, useMemo, useState } from "react";
 
 type Env = "sandbox" | "live";
 type Service = "notification" | "legacy";
@@ -12,6 +13,8 @@ type Row = {
   eventName: string;
   callbackUrl: string;
   isActive: boolean;
+  emailTo?: string[];
+  emailBcc?: string[];
 };
 
 const NOTIFICATION_EVENTS = [
@@ -37,310 +40,329 @@ const LEGACY_EVENTS = [
   "nppcreditrejections",
 ] as const;
 
-function mapEventToService(eventName: string): Service {
-  if ((NOTIFICATION_EVENTS as readonly string[]).includes(eventName as any)) return "notification";
-  if ((LEGACY_EVENTS as readonly string[]).includes(eventName as any)) return "legacy";
-  return "legacy";
-}
-
-function useWebhookHint() {
-  if (typeof window === "undefined") return "";
-  const fromEnv = process.env.NEXT_PUBLIC_WEBHOOK_HINT_BASE_URL?.trim();
-  const base = fromEnv || window.location.origin;
-  return `${base.replace(/\/$/, "")}/api/webhooks/provider`;
-}
-
-// Minimal toast
-type Toast = { id: number; type: "error" | "success" | "info"; text: string };
-function useToasts() {
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const idRef = useRef(1);
-  const push = (t: Omit<Toast, "id">) => {
-    const id = idRef.current++;
-    setToasts((x) => [...x, { ...t, id }]);
-    setTimeout(() => setToasts((x) => x.filter((y) => y.id !== id)), 4500);
-  };
-  return { toasts, push };
-}
-
 export default function SubscriptionsPage() {
   const [env, setEnv] = useState<Env>("sandbox");
+  const [service, setService] = useState<Service>("notification");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [editing, setEditing] = useState<Row | null>(null);
-  const [reportDate, setReportDate] = useState<string>("");
-  const [reportCount, setReportCount] = useState<number | null>(null);
-  const { toasts, push } = useToasts();
+  const [creating, setCreating] = useState(false);
 
-  const recommendedCallback = useWebhookHint();
+  const [form, setForm] = useState({
+    subscriptionName: "",
+    eventName: NOTIFICATION_EVENTS[0],
+    callbackUrl: "",
+    isActive: true,
+    emailTo: "",
+    emailBcc: "",
+  });
 
-  async function reload(serviceForList: Service) {
+  const eventOptions = useMemo(() => {
+    return service === "notification" ? NOTIFICATION_EVENTS : LEGACY_EVENTS;
+  }, [service]);
+
+  const apiKeyHeader = (): HeadersInit => {
+    // why: let your middleware inject this automatically if you use a real key; for local dev you may hardcode a sandbox key
+    const h: Record<string, string> = { "x-api-key": "test_sandbox_key" };
+    return h;
+  };
+
+  async function fetchList() {
     setLoading(true);
+    setError(null);
     try {
-      const res = await fetch(`/api/manage/subscriptions?service=${serviceForList}&env=${env}`, { cache: "no-store" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || res.statusText);
-      setRows(data.rows ?? []);
+      const res = await fetch(`/api/manage/subscriptions?env=${env}&service=${service}`, {
+        headers: apiKeyHeader(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || res.statusText);
+      setRows(json.rows ?? []);
     } catch (e: any) {
-      push({ type: "error", text: `Load failed: ${e?.message || e}` });
+      setError(e?.message ?? "Failed to load");
     } finally {
       setLoading(false);
     }
   }
 
-  // default list NM first
   useEffect(() => {
-    reload("notification");
+    fetchList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env]);
+  }, [env, service]);
 
-  function onEdit(r?: Row) {
-    const eventName = r?.eventName ?? NOTIFICATION_EVENTS[0];
-    const service = mapEventToService(eventName);
-    setEditing(
-      r ?? {
-        service,
-        subscriptionId: "",
-        subscriptionName: "",
-        eventName,
-        callbackUrl: recommendedCallback,
-        isActive: true,
-      }
-    );
+  function startCreate() {
+    setForm({
+      subscriptionName: "",
+      eventName: (eventOptions[0] as string) || "",
+      callbackUrl: "",
+      isActive: true,
+      emailTo: "",
+      emailBcc: "",
+    });
+    setCreating(true);
   }
 
-  async function onSave() {
+  async function submitCreate() {
+    const payload = {
+      subscriptionName: form.subscriptionName || undefined,
+      eventName: form.eventName.trim(),
+      callbackUrl: form.callbackUrl.trim(),
+      isActive: service === "notification" ? form.isActive : undefined,
+      emailTo: form.emailTo
+        ? form.emailTo.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined,
+      emailBcc: form.emailBcc
+        ? form.emailBcc.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined,
+    };
+    const res = await fetch(`/api/manage/subscriptions?env=${env}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), ...apiKeyHeader() },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(json?.error || res.statusText);
+      return;
+    }
+    setCreating(false);
+    await fetchList();
+  }
+
+  function startEdit(row: Row) {
+    setEditing(row);
+    setService(row.service); // align event options
+    setForm({
+      subscriptionName: row.subscriptionName ?? "",
+      eventName: row.eventName,
+      callbackUrl: row.callbackUrl,
+      isActive: row.isActive,
+      emailTo: (row.emailTo ?? []).join(","),
+      emailBcc: (row.emailBcc ?? []).join(","),
+    });
+  }
+
+  async function submitEdit() {
     if (!editing) return;
-    const service = mapEventToService(editing.eventName);
-    const isNew = !editing.subscriptionId;
-    try {
-      const qs = `env=${env}${!isNew ? `&id=${encodeURIComponent(editing.subscriptionId)}` : ""}`;
-      const method = isNew ? "POST" : ("PUT" as const);
-      const body = {
-        subscriptionName: editing.subscriptionName || editing.eventName,
-        eventName: editing.eventName,
-        callbackUrl: editing.callbackUrl,
-        isActive: service === "notification" ? editing.isActive : undefined,
-      };
-      const res = await fetch(`/api/manage/subscriptions?${qs}`, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || res.statusText);
-      setEditing(null);
-      push({ type: "success", text: `Subscription ${isNew ? "created" : "updated"}` });
-      await reload(service);
-    } catch (e: any) {
-      push({ type: "error", text: `Save failed: ${e?.message || e}` });
+    const payload = {
+      subscriptionName: form.subscriptionName || undefined,
+      eventName: form.eventName.trim(),
+      callbackUrl: form.callbackUrl.trim(),
+      isActive: editing.service === "notification" ? form.isActive : undefined,
+      emailTo: form.emailTo
+        ? form.emailTo.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined,
+      emailBcc: form.emailBcc
+        ? form.emailBcc.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined,
+    };
+    const res = await fetch(`/api/manage/subscriptions?env=${env}&id=${encodeURIComponent(editing.subscriptionId)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), ...apiKeyHeader() },
+      body: JSON.stringify(payload),
+    });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(json?.error || res.statusText);
+      return;
     }
+    setEditing(null);
+    await fetchList();
   }
 
-  async function onDelete(r: Row) {
-    try {
-      const qs = `env=${env}&id=${encodeURIComponent(r.subscriptionId)}`;
-      const res = await fetch(`/api/manage/subscriptions?${qs}`, { method: "DELETE" });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.error || res.statusText);
-      }
-      push({ type: "success", text: "Deleted" });
-      await reload(r.service);
-    } catch (e: any) {
-      push({ type: "error", text: `Delete failed: ${e?.message || e}` });
+  async function remove(row: Row) {
+    if (!confirm(`Delete subscription ${row.subscriptionId}?`)) return;
+    const res = await fetch(`/api/manage/subscriptions?env=${env}&id=${encodeURIComponent(row.subscriptionId)}`, {
+      method: "DELETE",
+      headers: apiKeyHeader(),
+    });
+    if (!res.ok && res.status !== 204) {
+      const json = await res.json().catch(() => ({}));
+      alert(json?.error || res.statusText);
+      return;
     }
+    await fetchList();
   }
-
-  async function onResend(r: Row) {
-    if (r.service !== "legacy") return;
-    try {
-      const qs = `env=${env}&action=resend&id=${encodeURIComponent(r.subscriptionId)}`;
-      const res = await fetch(`/api/manage/subscriptions?${qs}`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || res.statusText);
-      push({ type: "success", text: "Resend requested" });
-    } catch (e: any) {
-      push({ type: "error", text: `Resend failed: ${e?.message || e}` });
-    }
-  }
-
-  // Debounced report fetch (Legacy only)
-  useEffect(() => {
-    if (!reportDate) return;
-    const h = setTimeout(async () => {
-      try {
-        const qs = `env=${env}&action=report&date=${encodeURIComponent(reportDate)}`;
-        const res = await fetch(`/api/manage/subscriptions?${qs}`, { method: "GET" });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data?.error || res.statusText);
-        const count = Array.isArray(data?.eventname) ? data.eventname.length : (data?.count ?? 0);
-        setReportCount(count);
-      } catch (e: any) {
-        setReportCount(null);
-        push({ type: "error", text: `Report failed: ${e?.message || e}` });
-      }
-    }, 600);
-    return () => clearTimeout(h);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportDate, env]);
 
   return (
-    <div className="space-y-4">
-      {/* Toasts */}
-      <div className="fixed right-4 top-14 z-50 space-y-2">
-        {toasts.map((t) => (
-          <div key={t.id}
-               className={`px-3 py-2 rounded-lg text-sm border ${
-                 t.type === "error" ? "bg-[#2b1f2f] border-red-500/40 text-red-200"
-                 : t.type === "success" ? "bg-[#1f2b23] border-emerald-500/40 text-emerald-200"
-                 : "bg-panel border-outline/40 text-subt"
-               }`}>
-            {t.text}
-          </div>
-        ))}
+    <div className="p-6 space-y-6">
+      <h1 className="text-2xl font-semibold">Subscriptions</h1>
+
+      <div className="flex gap-4 items-center">
+        <label className="text-sm">Environment</label>
+        <select className="border px-2 py-1 rounded" value={env} onChange={(e) => setEnv(e.target.value as Env)}>
+          <option value="sandbox">sandbox</option>
+          <option value="live">live</option>
+        </select>
+
+        <label className="text-sm ml-4">Service</label>
+        <select className="border px-2 py-1 rounded" value={service} onChange={(e) => setService(e.target.value as Service)}>
+          <option value="notification">notification (NM)</option>
+          <option value="legacy">legacy</option>
+        </select>
+
+        <button
+          onClick={startCreate}
+          className="ml-auto bg-black text-white px-3 py-2 rounded"
+        >
+          + New Subscription
+        </button>
       </div>
 
-      {/* Header / controls */}
-      <div className="flex items-center justify-between bg-panel border border-outline/40 rounded-lg px-4 py-3">
-        <div className="flex items-center gap-3">
-          <h1 className="text-base font-medium">Manage → Subscriptions</h1>
-          <span className="text-xs text-subt">Create, update, delete, resend (Legacy), report (Legacy).</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-subt">Env</label>
-          <select
-            className="bg-surface border border-outline/40 rounded px-2 py-1 text-sm"
-            value={env}
-            onChange={(e) => setEnv(e.target.value as Env)}
-          >
-            <option value="sandbox">Sandbox</option>
-            <option value="live">Live</option>
-          </select>
+      {error && (
+        <div className="text-red-600 text-sm">{error}</div>
+      )}
 
-          <button
-            onClick={() => onEdit()}
-            className="ml-3 px-3 h-8 rounded-lg bg-surface border border-outline/40 text-sm hover:bg-panel/60"
-          >
-            New
-          </button>
-        </div>
-      </div>
-
-      {/* Callback hint + report */}
-      <div className="flex items-center gap-4">
-        <div className="text-xs text-subt">
-          Callback hint: <code className="bg-panel rounded px-1 py-[2px] border border-outline/30">
-            {recommendedCallback || "/api/webhooks/provider"}
-          </code> (use your ngrok URL in dev)
-        </div>
-
-        <div className="ml-auto flex items-center gap-2 bg-panel border border-outline/40 rounded-lg px-3 py-2">
-          <div className="text-sm">Legacy report date:</div>
-          <input
-            type="date"
-            className="bg-surface border border-outline/40 rounded px-2 py-1 text-sm"
-            value={reportDate}
-            onChange={(e) => setReportDate(e.target.value)}
-          />
-          <div className="text-xs text-subt">{reportCount != null ? `Items: ${reportCount}` : ""}</div>
-        </div>
-      </div>
-
-      {/* Table */}
-      <div className="border border-outline/40 rounded-lg overflow-hidden">
+      <div className="border rounded">
         <table className="w-full text-sm">
-          <thead className="bg-surface/60">
-            <tr className="text-subt">
-              <th className="text-left p-2">Name</th>
-              <th className="text-left p-2">Event</th>
-              <th className="text-left p-2">Callback URL</th>
-              <th className="text-left p-2">Active</th>
-              <th className="text-left p-2">Service</th>
-              <th className="text-left p-2">Actions</th>
+          <thead className="bg-gray-50">
+            <tr className="text-left">
+              <th className="p-2">Service</th>
+              <th className="p-2">ID</th>
+              <th className="p-2">Name</th>
+              <th className="p-2">Event</th>
+              <th className="p-2">Callback URL</th>
+              <th className="p-2">Active</th>
+              <th className="p-2">Emails</th>
+              <th className="p-2 w-40">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td className="p-3" colSpan={6}>Loading…</td></tr>
+              <tr><td className="p-4" colSpan={8}>Loading…</td></tr>
             ) : rows.length === 0 ? (
-              <tr><td className="p-3" colSpan={6}>No subscriptions</td></tr>
-            ) : (
-              rows.map((r) => (
-                <tr key={`${r.service}-${r.subscriptionId}`} className="border-t border-outline/30">
-                  <td className="p-2">{r.subscriptionName || r.eventName}</td>
-                  <td className="p-2">{r.eventName}</td>
-                  <td className="p-2 truncate max-w-[520px]">{r.callbackUrl}</td>
-                  <td className="p-2">{r.isActive ? "Yes" : "No"}</td>
-                  <td className="p-2">{r.service}</td>
-                  <td className="p-2 flex items-center gap-3">
-                    <button className="text-subt hover:underline" onClick={() => setEditing(r)}>Edit</button>
-                    <button className="text-subt hover:underline" onClick={() => onDelete(r)}>Delete</button>
-                    {r.service === "legacy" && (
-                      <button className="text-subt hover:underline" onClick={() => onResend(r)}>Resend</button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
+              <tr><td className="p-4" colSpan={8}>No subscriptions</td></tr>
+            ) : rows.map((r) => (
+              <tr key={`${r.service}-${r.subscriptionId}`} className="border-t">
+                <td className="p-2">{r.service}</td>
+                <td className="p-2 font-mono">{r.subscriptionId}</td>
+                <td className="p-2">{r.subscriptionName ?? "-"}</td>
+                <td className="p-2">{r.eventName}</td>
+                <td className="p-2 truncate max-w-[280px]">{r.callbackUrl}</td>
+                <td className="p-2">{r.isActive ? "Yes" : "No"}</td>
+                <td className="p-2">
+                  <div className="text-xs">
+                    {r.emailTo && r.emailTo.length > 0 && <div>to: {r.emailTo.join(", ")}</div>}
+                    {r.emailBcc && r.emailBcc.length > 0 && <div>bcc: {r.emailBcc.join(", ")}</div>}
+                    {!r.emailTo?.length && !r.emailBcc?.length && "-"}
+                  </div>
+                </td>
+                <td className="p-2">
+                  <div className="flex gap-2">
+                    <button className="px-2 py-1 border rounded" onClick={() => startEdit(r)}>Edit</button>
+                    <button className="px-2 py-1 border rounded" onClick={() => remove(r)}>Delete</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
 
-      {/* Modal */}
-      {editing && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center">
-          <div className="bg-surface border border-outline/40 rounded-xl p-6 w-[560px]">
-            <h2 className="text-base font-medium">{editing.subscriptionId ? "Edit" : "New"} subscription</h2>
-
-            <div className="mt-3 space-y-2">
-              <label className="block text-xs text-subt">Event</label>
-              <select
-                className="w-full bg-panel border border-outline/40 rounded px-2 py-1 text-sm"
-                value={editing.eventName}
-                onChange={(e) => {
-                  const en = e.target.value;
-                  setEditing({ ...editing, eventName: en, service: mapEventToService(en) });
-                }}
-              >
-                <optgroup label="Notification Management">
-                  {(NOTIFICATION_EVENTS as readonly string[]).map((e) => <option key={e} value={e}>{e}</option>)}
-                </optgroup>
-                <optgroup label="Legacy">
-                  {(LEGACY_EVENTS as readonly string[]).map((e) => <option key={e} value={e}>{e}</option>)}
-                </optgroup>
-              </select>
-
-              <div className="text-xs text-subt">Service: <span className="text-white">{mapEventToService(editing.eventName)}</span></div>
-
-              <label className="block text-xs text-subt mt-2">Name (optional)</label>
-              <input
-                className="w-full bg-panel border border-outline/40 rounded px-2 py-1 text-sm"
-                value={editing.subscriptionName ?? ""}
-                onChange={(e) => setEditing({ ...editing, subscriptionName: e.target.value })}
-              />
-
-              <label className="block text-xs text-subt mt-2">Callback URL</label>
-              <input
-                className="w-full bg-panel border border-outline/40 rounded px-2 py-1 text-sm"
-                value={editing.callbackUrl}
-                onChange={(e) => setEditing({ ...editing, callbackUrl: e.target.value })}
-              />
-
-              <label className="inline-flex items-center gap-2 mt-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={editing.isActive}
-                  onChange={(e) => setEditing({ ...editing, isActive: e.target.checked })}
-                  disabled={mapEventToService(editing.eventName) === "legacy"} // legacy doesn't support isActive in request
-                />
-                <span>Active (Notification Management only)</span>
-              </label>
+      {(creating || editing) && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium">{creating ? "Create Subscription" : "Edit Subscription"}</h2>
+              <button className="text-sm underline" onClick={() => { setCreating(false); setEditing(null); }}>Close</button>
             </div>
 
-            <div className="flex justify-end gap-3 pt-4">
-              <button className="px-3 h-9 rounded-lg bg-surface border border-outline/40 text-sm" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="px-3 h-9 rounded-lg bg-[#342b63] text-white text-sm" onClick={onSave}>Save</button>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="text-xs text-gray-600">Service</label>
+                <select
+                  className="w-full border px-2 py-1 rounded"
+                  value={service}
+                  onChange={(e) => setService(e.target.value as Service)}
+                  disabled={!creating}
+                >
+                  <option value="notification">notification (NM)</option>
+                  <option value="legacy">legacy</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-600">Event Name</label>
+                <select
+                  className="w-full border px-2 py-1 rounded"
+                  value={form.eventName}
+                  onChange={(e) => setForm((f) => ({ ...f, eventName: e.target.value }))}
+                >
+                  {eventOptions.map((ev) => (
+                    <option key={ev as string} value={ev as string}>{ev as string}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-xs text-gray-600">Subscription Name (optional)</label>
+                <input
+                  className="w-full border px-2 py-1 rounded"
+                  value={form.subscriptionName}
+                  onChange={(e) => setForm((f) => ({ ...f, subscriptionName: e.target.value }))}
+                  placeholder="Ops Alerts, PayTo PI, etc."
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-xs text-gray-600">Callback URL</label>
+                <input
+                  className="w-full border px-2 py-1 rounded"
+                  value={form.callbackUrl}
+                  onChange={(e) => setForm((f) => ({ ...f, callbackUrl: e.target.value }))}
+                  placeholder="https://yourapp.com/webhooks/monoova"
+                />
+              </div>
+
+              {service === "notification" && (
+                <div>
+                  <label className="text-xs text-gray-600">Active</label>
+                  <select
+                    className="w-full border px-2 py-1 rounded"
+                    value={form.isActive ? "true" : "false"}
+                    onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.value === "true" }))}
+                  >
+                    <option value="true">true</option>
+                    <option value="false">false</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="col-span-2">
+                <label className="text-xs text-gray-600">Email To (comma separated)</label>
+                <input
+                  className="w-full border px-2 py-1 rounded"
+                  value={form.emailTo}
+                  onChange={(e) => setForm((f) => ({ ...f, emailTo: e.target.value }))}
+                  placeholder="ops@example.com, support@example.com"
+                />
+              </div>
+
+              <div className="col-span-2">
+                <label className="text-xs text-gray-600">Email BCC (comma separated)</label>
+                <input
+                  className="w-full border px-2 py-1 rounded"
+                  value={form.emailBcc}
+                  onChange={(e) => setForm((f) => ({ ...f, emailBcc: e.target.value }))}
+                  placeholder="audit@example.com"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button className="border px-3 py-2 rounded" onClick={() => { setCreating(false); setEditing(null); }}>
+                Cancel
+              </button>
+              {creating ? (
+                <button className="bg-black text-white px-3 py-2 rounded" onClick={submitCreate}>
+                  Create
+                </button>
+              ) : (
+                <button className="bg-black text-white px-3 py-2 rounded" onClick={submitEdit}>
+                  Save
+                </button>
+              )}
             </div>
           </div>
         </div>

@@ -13,8 +13,9 @@ import {
   type CreateUpdatePayload,
 } from "../../../lib/monoova/subscriptions";
 import { z } from "zod";
+import { prisma } from "../../../lib/prisma"; // assumes you export prisma client here
 
-// Notification Management events (lowercase to match your infer logic)
+// Notification Management events (lowercase to match infer logic)
 const NOTIFICATION_EVENTS = [
   "paymentagreementnotification",
   "paymentinstructionnotification",
@@ -69,8 +70,40 @@ function requireApiKey(req: NextApiRequest): string | null {
   return v && v.trim().length > 0 ? null : "Missing x-api-key";
 }
 
+async function cacheUpsert(env: string, row: {
+  service: string; subscriptionId: string; subscriptionName?: string; eventName: string;
+  callbackUrl: string; isActive: boolean; emailTo?: string[]; emailBcc?: string[];
+}) {
+  // why: store arrays as JSON strings to keep schema simple
+  await prisma.subscriptionCache.upsert({
+    where: { env_service_subscriptionId: { env, service: row.service, subscriptionId: row.subscriptionId } },
+    create: {
+      env, service: row.service, subscriptionId: row.subscriptionId,
+      subscriptionName: row.subscriptionName ?? null,
+      eventName: row.eventName, callbackUrl: row.callbackUrl, isActive: row.isActive,
+      emailTo: row.emailTo ? JSON.stringify(row.emailTo) : null,
+      emailBcc: row.emailBcc ? JSON.stringify(row.emailBcc) : null,
+    },
+    update: {
+      subscriptionName: row.subscriptionName ?? null,
+      eventName: row.eventName, callbackUrl: row.callbackUrl, isActive: row.isActive,
+      emailTo: row.emailTo ? JSON.stringify(row.emailTo) : null,
+      emailBcc: row.emailBcc ? JSON.stringify(row.emailBcc) : null,
+    },
+  });
+}
+
+async function cacheDelete(env: string, service: string, id: string) {
+  try {
+    await prisma.subscriptionCache.delete({
+      where: { env_service_subscriptionId: { env, service, subscriptionId: id } },
+    });
+  } catch {
+    // ignore if not present
+  }
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  // why: prevent public abuse; aligns with your provider-facing contract
   const apiKeyError = requireApiKey(req);
   if (apiKeyError) return res.status(401).json({ error: apiKeyError });
 
@@ -104,19 +137,25 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const service = (req.query.service as MonoovaService) || "notification";
 
       if (id) {
-        // try requested service first; if not found and no explicit service, fallback to the other
         const primary = await getSubscription(service, q.env, id);
-        if (primary) return res.status(200).json({ row: primary });
-
+        if (primary) {
+          await cacheUpsert(q.env, primary);
+          return res.status(200).json({ row: primary });
+        }
         if (!req.query.service) {
           const alt: MonoovaService = service === "notification" ? "legacy" : "notification";
           const secondary = await getSubscription(alt, q.env, id);
-          if (secondary) return res.status(200).json({ row: secondary });
+          if (secondary) {
+            await cacheUpsert(q.env, secondary);
+            return res.status(200).json({ row: secondary });
+          }
         }
         return res.status(404).json({ error: "Subscription not found" });
       }
 
       const rows = await listSubscriptions(service, q.env);
+      // Keep cache in sync (best effort)
+      await Promise.all(rows.map((r) => cacheUpsert(q.env, r)));
       return res.status(200).json({ rows });
     }
 
@@ -125,6 +164,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const service = inferService(b.eventName);
       const idem = headerStr(req.headers["idempotency-key"]);
       const out = await createSubscription(service, q.env, b, { idempotencyKey: idem || undefined });
+
+      // fetch the created row for cache (best effort)
+      if (out?.subscriptionId) {
+        const row = await getSubscription(service, q.env, out.subscriptionId);
+        if (row) await cacheUpsert(q.env, row);
+      }
       return res.status(201).json({ ...out, service });
     }
 
@@ -135,6 +180,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const service = inferService(b.eventName);
       const idem = headerStr(req.headers["idempotency-key"]);
       const out = await updateSubscription(service, q.env, id, b, { idempotencyKey: idem || undefined });
+
+      // refresh cache
+      const row = await getSubscription(service, q.env, out?.subscriptionId ?? id);
+      if (row) await cacheUpsert(q.env, row);
       return res.status(200).json({ ...out, service });
     }
 
@@ -142,10 +191,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const id = toStr(req.query.id);
       if (!id) return res.status(400).json({ error: "id is required" });
 
+      // try NM then legacy; clean cache both
       try {
         await deleteSubscription("notification", q.env, id);
+        await cacheDelete(q.env, "notification", id);
       } catch {
         await deleteSubscription("legacy", q.env, id);
+        await cacheDelete(q.env, "legacy", id);
       }
       return res.status(204).end();
     }

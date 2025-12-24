@@ -103,3 +103,19 @@ model TransactionLog {
   redactions   Json?
   @@index([kind, requestedAt])
 }
+model SubscriptionCache {
+  id               String   @id @default(cuid())
+  env              String   // "sandbox" | "live"
+  service          String   // "notification" | "legacy"
+  subscriptionId   String
+  subscriptionName String?
+  eventName        String
+  callbackUrl      String
+  isActive         Boolean
+  emailTo          String?  @db.Text // JSON array as string
+  emailBcc         String?  @db.Text // JSON array as string
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([env, service, subscriptionId])
+}
