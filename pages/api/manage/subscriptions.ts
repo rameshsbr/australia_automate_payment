@@ -5,84 +5,115 @@ import {
   resendLegacy, reportLegacy,
   type MonoovaEnv, type MonoovaService, type CreateUpdatePayload,
 } from "../../../lib/monoova/subscriptions";
+import { z } from "zod";
 
-const assertIn = (name: string, v: string, allowed: string[]) => {
-  if (!allowed.includes(v)) throw new Error(`${name} must be one of: ${allowed.join(", ")}`);
-};
+const NOTIFICATION_EVENTS = [
+  "paymentagreementnotification",
+  "paymentinstructionnotification",
+  "creditcardpaymentnotification",
+  "creditcardrefundnotification",
+  "asyncjobresultnotification",
+] as const;
+
+const LEGACY_EVENTS = [
+  "nppreceivepayment",
+  "paytoreceivepayment",
+  "inbounddirectcredit",
+  "directdebitclearance",
+  "directentrydishonour",
+  "pendinginboundrtgsimt",
+  "inboundrtgsimtstatus",
+  "inbounddirectdebit",
+  "nppreturn",
+  "npppaymentstatus",
+  "inbounddirectcreditrejections",
+  "nppcreditrejections",
+] as const;
+
+const EnvSchema = z.enum(["sandbox", "live"]);
+const QueryBase = z.object({
+  env: EnvSchema.default("sandbox"),
+  service: z.enum(["notification", "legacy"]).optional(), // may be inferred
+  action: z.enum(["resend", "report"]).optional(),
+  id: z.string().optional(),
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+});
+
+const BodySchema = z.object({
+  subscriptionName: z.string().trim().max(128).optional(),
+  eventName: z.string().trim(),
+  callbackUrl: z.string().url(),
+  isActive: z.boolean().optional(),
+});
+
+function inferService(eventName: string): MonoovaService {
+  if ((NOTIFICATION_EVENTS as readonly string[]).includes(eventName)) return "notification";
+  if ((LEGACY_EVENTS as readonly string[]).includes(eventName)) return "legacy";
+  throw new Error(`Unknown eventName: ${eventName}`);
+}
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const service = (req.query.service as MonoovaService) || "notification";
-    const env = (req.query.env as MonoovaEnv) || "sandbox";
-    const action = String(req.query.action || "");
+    const q = QueryBase.parse({
+      env: req.query.env,
+      service: req.query.service,
+      action: req.query.action,
+      id: req.query.id,
+      date: req.query.date,
+    }) as any;
 
-    assertIn("service", service, ["notification", "legacy"]);
-    assertIn("env", env, ["sandbox", "live"]);
-
-    // --- Action endpoints (legacy only) ---
-    if (action === "resend") {
-      if (service !== "legacy") throw new Error("Resend is supported on Legacy Subscriptions only");
+    // Action routes (legacy only)
+    if (q.action === "resend") {
       if (req.method !== "POST") throw new Error("Use POST for action=resend");
-      const id = String(req.query.id || "");
-      if (!id) throw new Error("id is required");
-      const out = await resendLegacy(env, id);
+      if (!q.id) throw new Error("id is required");
+      const out = await resendLegacy(q.env, String(q.id));
       res.status(200).json(out);
       return;
     }
 
-    if (action === "report") {
-      if (service !== "legacy") throw new Error("Report is supported on Legacy Subscriptions only");
+    if (q.action === "report") {
       if (req.method !== "GET") throw new Error("Use GET for action=report");
-      const date = String(req.query.date || "");
-      if (!date) throw new Error("date (YYYY-MM-DD) is required");
-      const out = await reportLegacy(env, date);
+      if (!q.date) throw new Error("date (YYYY-MM-DD) is required");
+      const out = await reportLegacy(q.env, String(q.date));
       res.status(200).json(out);
       return;
     }
 
-    // --- CRUD ---
+    // CRUD
     if (req.method === "GET") {
-      const rows = await listSubscriptions(service, env);
+      const service = (req.query.service as MonoovaService) || "notification";
+      const rows = await listSubscriptions(service, q.env);
       res.status(200).json({ rows });
       return;
     }
 
     if (req.method === "POST") {
-      const b = req.body as Partial<CreateUpdatePayload>;
-      if (!b?.eventName || !b?.callbackUrl) throw new Error("eventName and callbackUrl are required");
-      const out = await createSubscription(service, env, {
-        subscriptionName: b.subscriptionName ?? b.eventName,
-        eventName: b.eventName,
-        callbackUrl: b.callbackUrl,
-        isActive: b.isActive ?? true,
-        emailTo: b.emailTo ?? [],
-        emailBcc: b.emailBcc ?? [],
-      });
-      res.status(201).json(out);
+      const b = BodySchema.parse(req.body) as CreateUpdatePayload;
+      const service = inferService(b.eventName);
+      const out = await createSubscription(service, q.env, b);
+      res.status(201).json({ ...out, service });
       return;
     }
 
     if (req.method === "PUT") {
       const id = String(req.query.id || "");
       if (!id) throw new Error("id is required");
-      const b = req.body as Partial<CreateUpdatePayload>;
-      if (!b?.eventName || !b?.callbackUrl) throw new Error("eventName and callbackUrl are required");
-      const out = await updateSubscription(service, env, id, {
-        subscriptionName: b.subscriptionName ?? b.eventName,
-        eventName: b.eventName,
-        callbackUrl: b.callbackUrl,
-        isActive: b.isActive ?? true,
-        emailTo: b.emailTo ?? [],
-        emailBcc: b.emailBcc ?? [],
-      });
-      res.status(200).json(out);
+      const b = BodySchema.parse(req.body) as CreateUpdatePayload;
+      const service = inferService(b.eventName);
+      const out = await updateSubscription(service, q.env, id, b);
+      res.status(200).json({ ...out, service });
       return;
     }
 
     if (req.method === "DELETE") {
       const id = String(req.query.id || "");
       if (!id) throw new Error("id is required");
-      await deleteSubscription(service, env, id);
+      // For delete we can infer from client row; if unknown, try both (NM first)
+      try {
+        await deleteSubscription("notification", q.env, id);
+      } catch {
+        await deleteSubscription("legacy", q.env, id);
+      }
       res.status(204).end();
       return;
     }

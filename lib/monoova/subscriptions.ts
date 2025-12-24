@@ -28,7 +28,7 @@ const reqd = (k: string, v?: string) => {
 };
 
 function basic(env: MonoovaEnv) {
-  // Basic username = mAccount, password = API key
+  // Why: Monoova Basic auth is username=mAccount, password=API key
   const user =
     env === "sandbox"
       ? reqd("SANDBOX_MACCOUNT", process.env.SANDBOX_MACCOUNT)
@@ -56,24 +56,43 @@ async function call(
   service: MonoovaService,
   env: MonoovaEnv,
   path: string,
-  init: RequestInit & { searchParams?: Record<string, string> } = {}
+  init: RequestInit & { searchParams?: Record<string, string>, timeoutMs?: number } = {}
 ) {
   const root = service === "notification" ? baseNotification(env) : `${baseLegacy(env)}/subscriptions/v1`;
   const url = new URL(path.startsWith("http") ? path : `${root}${path}`);
   if (init.searchParams) for (const [k, v] of Object.entries(init.searchParams)) url.searchParams.set(k, v);
-  const res = await fetch(url.toString(), {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-      Authorization: basic(env),
-      ...(init.headers || {}),
-    },
-  } as any);
-  const text = await res.text();
-  let body: any; try { body = text ? JSON.parse(text) : undefined; } catch { body = text; }
-  if (!res.ok) throw new Error(`Monoova ${service} ${res.status}: ${typeof body === "string" ? body : JSON.stringify(body)}`);
-  return body;
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), init.timeoutMs ?? 20000);
+
+  try {
+    const res = await fetch(url.toString(), {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        Authorization: basic(env),
+        ...(init.headers || {}),
+      },
+      signal: controller.signal,
+    } as any);
+
+    const text = await res.text();
+    let body: any; try { body = text ? JSON.parse(text) : undefined; } catch { body = text; }
+    if (!res.ok) {
+      // Why: surface upstream error bodies (401/400/etc.) clearly
+      throw new Error(
+        `Monoova ${service} ${res.status} ${res.statusText} – ${typeof body === "string" ? body : JSON.stringify(body)}`
+      );
+    }
+    return body;
+  } catch (err: any) {
+    // Why: replace generic “fetch failed” with root cause (DNS, TLS, abort)
+    const hint = err?.name === "AbortError" ? "request timed out" : (err?.cause?.code || err?.message || String(err));
+    throw new Error(`Network error calling ${url.hostname}: ${hint}`);
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export async function listSubscriptions(service: MonoovaService, env: MonoovaEnv): Promise<SubscriptionRow[]> {
@@ -156,13 +175,14 @@ export async function deleteSubscription(service: MonoovaService, env: MonoovaEn
   await call("legacy", env, `/delete/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-// ---- New: Legacy-only helpers ----
+// ---- Legacy-only helpers ----
 export async function resendLegacy(env: MonoovaEnv, webhookId: string) {
-  const url = `${baseLegacy(env)}/subscriptions/v2/resend/${encodeURIComponent(webhookId)}`;
-  return call("legacy", env, url.replace(`${baseLegacy(env)}/subscriptions/v1`, "" as any), { method: "POST" });
+  // v2 endpoint; build absolute then strip v1 prefix for `call`
+  const full = `${baseLegacy(env)}/subscriptions/v2/resend/${encodeURIComponent(webhookId)}`;
+  const v1root = `${baseLegacy(env)}/subscriptions/v1`;
+  return call("legacy", env, full.replace(v1root, ""), { method: "POST" });
 }
 
-export async function reportLegacy(env: MonoovaEnv, dateYYYYMMDD: string) {
-  // date format per docs, e.g. 2025-01-31 (server will accept hyphenated)
-  return call("legacy", env, `/report/${encodeURIComponent(dateYYYYMMDD)}`, { method: "GET" });
+export async function reportLegacy(env: MonoovaEnv, ymd: string) {
+  return call("legacy", env, `/report/${encodeURIComponent(ymd)}`, { method: "GET" });
 }
