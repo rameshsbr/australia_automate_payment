@@ -77,14 +77,27 @@ async function call(
   const timeout = setTimeout(() => controller.abort(), init.timeoutMs ?? 20000);
 
   try {
+    // ------------------------------
+    // AUTH HEADERS: Legacy = Basic, NM = x-api-key
+    // ------------------------------
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      ...(init.headers as Record<string, string> | undefined),
+    };
+
+    if (service === "legacy") {
+      headers.Authorization = basic(env);
+    } else {
+      headers["x-api-key"] =
+        env === "sandbox"
+          ? reqd("MONOOVA_API_KEY_SANDBOX", process.env.MONOOVA_API_KEY_SANDBOX)
+          : reqd("MONOOVA_API_KEY_LIVE", process.env.MONOOVA_API_KEY_LIVE);
+    }
+
     const res = await fetch(url.toString(), {
       ...init,
-      headers: {
-        "Content-Type": "application/json",
-        Accept: "application/json",
-        Authorization: basic(env),
-        ...(init.headers || {}),
-      },
+      headers,
       signal: controller.signal,
     } as any);
 

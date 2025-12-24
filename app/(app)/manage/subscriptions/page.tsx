@@ -4,7 +4,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 
 type Env = "sandbox" | "live";
-type Service = "notification" | "legacy";
+type Service = "legacy";
 
 type Row = {
   service: Service;
@@ -17,6 +17,7 @@ type Row = {
   emailBcc?: string[];
 };
 
+// Keep NM list for reference but unused here
 const NOTIFICATION_EVENTS = [
   "paymentagreementnotification",
   "paymentinstructionnotification",
@@ -42,7 +43,7 @@ const LEGACY_EVENTS = [
 
 export default function SubscriptionsPage() {
   const [env, setEnv] = useState<Env>("sandbox");
-  const [service, setService] = useState<Service>("notification");
+  const [service] = useState<Service>("legacy");
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,19 +53,16 @@ export default function SubscriptionsPage() {
 
   const [form, setForm] = useState({
     subscriptionName: "",
-    eventName: NOTIFICATION_EVENTS[0],
+    eventName: LEGACY_EVENTS[0] as string,
     callbackUrl: "",
-    isActive: true,
+    isActive: true, // ignored by legacy; kept for harmless UI symmetry
     emailTo: "",
     emailBcc: "",
   });
 
-  const eventOptions = useMemo(() => {
-    return service === "notification" ? NOTIFICATION_EVENTS : LEGACY_EVENTS;
-  }, [service]);
+  const eventOptions = useMemo(() => LEGACY_EVENTS as readonly string[], []);
 
   const apiKeyHeader = (): HeadersInit => {
-    // why: let your middleware inject this automatically if you use a real key; for local dev you may hardcode a sandbox key
     const h: Record<string, string> = { "x-api-key": "test_sandbox_key" };
     return h;
   };
@@ -73,7 +71,7 @@ export default function SubscriptionsPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/manage/subscriptions?env=${env}&service=${service}`, {
+      const res = await fetch(`/api/manage/subscriptions?env=${env}&service=legacy`, {
         headers: apiKeyHeader(),
       });
       const json = await res.json();
@@ -89,7 +87,7 @@ export default function SubscriptionsPage() {
   useEffect(() => {
     fetchList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env, service]);
+  }, [env]);
 
   function startCreate() {
     setForm({
@@ -108,13 +106,6 @@ export default function SubscriptionsPage() {
       subscriptionName: form.subscriptionName || undefined,
       eventName: form.eventName.trim(),
       callbackUrl: form.callbackUrl.trim(),
-      isActive: service === "notification" ? form.isActive : undefined,
-      emailTo: form.emailTo
-        ? form.emailTo.split(",").map((s) => s.trim()).filter(Boolean)
-        : undefined,
-      emailBcc: form.emailBcc
-        ? form.emailBcc.split(",").map((s) => s.trim()).filter(Boolean)
-        : undefined,
     };
     const res = await fetch(`/api/manage/subscriptions?env=${env}`, {
       method: "POST",
@@ -132,7 +123,6 @@ export default function SubscriptionsPage() {
 
   function startEdit(row: Row) {
     setEditing(row);
-    setService(row.service); // align event options
     setForm({
       subscriptionName: row.subscriptionName ?? "",
       eventName: row.eventName,
@@ -149,13 +139,6 @@ export default function SubscriptionsPage() {
       subscriptionName: form.subscriptionName || undefined,
       eventName: form.eventName.trim(),
       callbackUrl: form.callbackUrl.trim(),
-      isActive: editing.service === "notification" ? form.isActive : undefined,
-      emailTo: form.emailTo
-        ? form.emailTo.split(",").map((s) => s.trim()).filter(Boolean)
-        : undefined,
-      emailBcc: form.emailBcc
-        ? form.emailBcc.split(",").map((s) => s.trim()).filter(Boolean)
-        : undefined,
     };
     const res = await fetch(`/api/manage/subscriptions?env=${env}&id=${encodeURIComponent(editing.subscriptionId)}`, {
       method: "PUT",
@@ -197,8 +180,8 @@ export default function SubscriptionsPage() {
         </select>
 
         <label className="text-sm ml-4">Service</label>
-        <select className="border px-2 py-1 rounded" value={service} onChange={(e) => setService(e.target.value as Service)}>
-          <option value="notification">notification (NM)</option>
+        {/* Fixed to legacy for Payments API */}
+        <select className="border px-2 py-1 rounded" value="legacy" disabled>
           <option value="legacy">legacy</option>
         </select>
 
@@ -271,15 +254,7 @@ export default function SubscriptionsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="text-xs text-gray-600">Service</label>
-                <select
-                  className="w-full border px-2 py-1 rounded"
-                  value={service}
-                  onChange={(e) => setService(e.target.value as Service)}
-                  disabled={!creating}
-                >
-                  <option value="notification">notification (NM)</option>
-                  <option value="legacy">legacy</option>
-                </select>
+                <input className="w-full border px-2 py-1 rounded bg-gray-100" value="legacy" disabled />
               </div>
 
               <div>
@@ -301,7 +276,7 @@ export default function SubscriptionsPage() {
                   className="w-full border px-2 py-1 rounded"
                   value={form.subscriptionName}
                   onChange={(e) => setForm((f) => ({ ...f, subscriptionName: e.target.value }))}
-                  placeholder="Ops Alerts, PayTo PI, etc."
+                  placeholder="Ops Alerts, etc."
                 />
               </div>
 
@@ -311,41 +286,7 @@ export default function SubscriptionsPage() {
                   className="w-full border px-2 py-1 rounded"
                   value={form.callbackUrl}
                   onChange={(e) => setForm((f) => ({ ...f, callbackUrl: e.target.value }))}
-                  placeholder="https://yourapp.com/webhooks/monoova"
-                />
-              </div>
-
-              {service === "notification" && (
-                <div>
-                  <label className="text-xs text-gray-600">Active</label>
-                  <select
-                    className="w-full border px-2 py-1 rounded"
-                    value={form.isActive ? "true" : "false"}
-                    onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.value === "true" }))}
-                  >
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </select>
-                </div>
-              )}
-
-              <div className="col-span-2">
-                <label className="text-xs text-gray-600">Email To (comma separated)</label>
-                <input
-                  className="w-full border px-2 py-1 rounded"
-                  value={form.emailTo}
-                  onChange={(e) => setForm((f) => ({ ...f, emailTo: e.target.value }))}
-                  placeholder="ops@example.com, support@example.com"
-                />
-              </div>
-
-              <div className="col-span-2">
-                <label className="text-xs text-gray-600">Email BCC (comma separated)</label>
-                <input
-                  className="w-full border px-2 py-1 rounded"
-                  value={form.emailBcc}
-                  onChange={(e) => setForm((f) => ({ ...f, emailBcc: e.target.value }))}
-                  placeholder="audit@example.com"
+                  placeholder="https://<your-ngrok>/api/webhooks/provider"
                 />
               </div>
             </div>

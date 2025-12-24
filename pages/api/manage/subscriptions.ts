@@ -8,8 +8,6 @@ import {
   deleteSubscription,
   resendLegacy,
   reportLegacy,
-  type MonoovaEnv,
-  type MonoovaService,
   type CreateUpdatePayload,
 } from "../../../lib/monoova/subscriptions";
 import { z } from "zod";
@@ -18,7 +16,7 @@ import { z } from "zod";
 import * as PrismaExport from "../../../lib/prisma";
 const prisma: any = (PrismaExport as any).default ?? (PrismaExport as any).prisma ?? null;
 
-// Notification Management events (lowercase to match infer logic)
+// Notification Management events (kept for backwards compatibility; not used)
 const NOTIFICATION_EVENTS = [
   "paymentagreementnotification",
   "paymentinstructionnotification",
@@ -45,7 +43,7 @@ const LEGACY_EVENTS = [
 const EnvSchema = z.enum(["sandbox", "live"]);
 const QueryBase = z.object({
   env: EnvSchema.default("sandbox"),
-  service: z.enum(["notification", "legacy"]).optional(),
+  service: z.enum(["notification", "legacy"]).optional(), // accepted for compatibility; ignored below
   action: z.enum(["resend", "report"]).optional(),
   id: z.string().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -60,11 +58,9 @@ const BodySchema = z.object({
   emailBcc: z.array(z.string().email()).optional(),
 });
 
-function inferService(eventName: string): MonoovaService {
-  const v = (eventName || "").toLowerCase();
-  if ((NOTIFICATION_EVENTS as readonly string[]).includes(v)) return "notification";
-  if ((LEGACY_EVENTS as readonly string[]).includes(v)) return "legacy";
-  throw new Error(`Unknown eventName: ${eventName}`);
+// 👉 Pin service to legacy regardless of event (Payments API only)
+function inferService(_eventName: string) {
+  return "legacy" as const;
 }
 
 function requireApiKey(req: NextApiRequest): string | null {
@@ -77,7 +73,6 @@ async function cacheUpsert(env: string, row: {
   service: string; subscriptionId: string; subscriptionName?: string; eventName: string;
   callbackUrl: string; isActive: boolean; emailTo?: string[]; emailBcc?: string[];
 }) {
-  // why: run API without DB during dev; cache is best-effort
   if (!prisma) return;
   await prisma.subscriptionCache.upsert({
     where: { env_service_subscriptionId: { env, service: row.service, subscriptionId: row.subscriptionId } },
@@ -136,24 +131,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json(out);
     }
 
-    // --- CRUD ---
+    // --- CRUD (legacy only) ---
+    const service = "legacy" as const;
+
     if (req.method === "GET") {
       const id = toStr(req.query.id);
-      const service = (req.query.service as MonoovaService) || "notification";
-
       if (id) {
-        const primary = await getSubscription(service, q.env, id);
-        if (primary) {
-          await cacheUpsert(q.env, primary);
-          return res.status(200).json({ row: primary });
-        }
-        if (!req.query.service) {
-          const alt: MonoovaService = service === "notification" ? "legacy" : "notification";
-          const secondary = await getSubscription(alt, q.env, id);
-          if (secondary) {
-            await cacheUpsert(q.env, secondary);
-            return res.status(200).json({ row: secondary });
-          }
+        const row = await getSubscription(service, q.env, id);
+        if (row) {
+          await cacheUpsert(q.env, row);
+          return res.status(200).json({ row });
         }
         return res.status(404).json({ error: "Subscription not found" });
       }
@@ -165,7 +152,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (req.method === "POST") {
       const b = BodySchema.parse(req.body) as CreateUpdatePayload;
-      const service = inferService(b.eventName);
       const idem = headerStr(req.headers["idempotency-key"]);
       const out = await createSubscription(service, q.env, b, { idempotencyKey: idem || undefined });
 
@@ -180,7 +166,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const id = toStr(req.query.id);
       if (!id) return res.status(400).json({ error: "id is required" });
       const b = BodySchema.parse(req.body) as CreateUpdatePayload;
-      const service = inferService(b.eventName);
       const idem = headerStr(req.headers["idempotency-key"]);
       const out = await updateSubscription(service, q.env, id, b, { idempotencyKey: idem || undefined });
 
@@ -192,14 +177,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === "DELETE") {
       const id = toStr(req.query.id);
       if (!id) return res.status(400).json({ error: "id is required" });
-
-      try {
-        await deleteSubscription("notification", q.env, id);
-        await cacheDelete(q.env, "notification", id);
-      } catch {
-        await deleteSubscription("legacy", q.env, id);
-        await cacheDelete(q.env, "legacy", id);
-      }
+      await deleteSubscription(service, q.env, id);
+      await cacheDelete(q.env, service, id);
       return res.status(204).end();
     }
 
@@ -219,7 +198,6 @@ function toStr(v: string | string[] | undefined): string | undefined {
   if (!v) return undefined;
   return Array.isArray(v) ? v[0] : v;
 }
-
 function headerStr(v: string | string[] | undefined): string | null {
   if (!v) return null;
   return (Array.isArray(v) ? v[0] : v).trim() || null;
