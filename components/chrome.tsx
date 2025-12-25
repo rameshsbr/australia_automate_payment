@@ -124,20 +124,6 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         <NavItem href="/statements" label="Statements" icon="📄" currentPath={normalizedPath} modePrefix={modePrefix} />
         <NavItem href="/reports" label="Reports" icon="📈" currentPath={normalizedPath} modePrefix={modePrefix} />
 
-        {/* Manage group (added) */}
-        <GroupLabel>
-          <span className="text-base">🧰</span>
-          <span>Manage</span>
-        </GroupLabel>
-        <NavItem
-          href="/manage/subscriptions"
-          label="Subscriptions"
-          icon="🔔"
-          currentPath={normalizedPath}
-          modePrefix={modePrefix}
-        />
-        {/* End Manage */}
-
         <NavItem href="/developer" label="Developer" icon="🧩" currentPath={normalizedPath} modePrefix={modePrefix} />
 
         <div className="mt-auto" />
