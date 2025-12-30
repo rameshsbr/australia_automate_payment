@@ -1,5 +1,7 @@
 // pages/api/manage/subscriptions.ts
 import type { NextApiRequest, NextApiResponse } from "next";
+import { parseAllowedOrigins, isCallbackAllowed } from "@/lib/url-allowlist";
+
 import {
   listSubscriptions,
   getSubscription,
@@ -15,15 +17,6 @@ import { z } from "zod";
 // ——— Prisma import made tolerant to both default and named exports ———
 import * as PrismaExport from "../../../lib/prisma";
 const prisma: any = (PrismaExport as any).default ?? (PrismaExport as any).prisma ?? null;
-
-// Notification Management events (kept for backwards compatibility; not used)
-const NOTIFICATION_EVENTS = [
-  "paymentagreementnotification",
-  "paymentinstructionnotification",
-  "creditcardpaymentnotification",
-  "creditcardrefundnotification",
-  "asyncjobresultnotification",
-] as const;
 
 const LEGACY_EVENTS = [
   "nppreceivepayment",
@@ -43,7 +36,7 @@ const LEGACY_EVENTS = [
 const EnvSchema = z.enum(["sandbox", "live"]);
 const QueryBase = z.object({
   env: EnvSchema.default("sandbox"),
-  service: z.enum(["notification", "legacy"]).optional(), // accepted for compatibility; ignored below
+  service: z.enum(["notification", "legacy"]).optional(), // accepted but ignored
   action: z.enum(["resend", "report"]).optional(),
   id: z.string().optional(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -58,16 +51,41 @@ const BodySchema = z.object({
   emailBcc: z.array(z.string().email()).optional(),
 });
 
-// 👉 Pin service to legacy regardless of event (Payments API only)
-function inferService(_eventName: string) {
-  return "legacy" as const;
-}
+// Payments API only → always legacy
+function inferService() { return "legacy" as const; }
 
 function requireApiKey(req: NextApiRequest): string | null {
   const k = req.headers["x-api-key"];
   const v = Array.isArray(k) ? k[0] : k;
   return v && v.trim().length > 0 ? null : "Missing x-api-key";
 }
+
+// ---- callback URL guards (accept origins; no paths) ----
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.CALLBACK_HOST_ALLOWLIST);
+
+function ensureSafeCallback(urlStr: string) {
+  let u: URL;
+  try {
+    u = new URL(urlStr);
+  } catch {
+    throw new Error("Invalid callbackUrl");
+  }
+
+  const isLocal = ["localhost", "127.0.0.1"].includes(u.hostname);
+
+  // Require HTTPS for public hosts; allow http for localhost during dev
+  if (!isLocal && u.protocol !== "https:") {
+    throw new Error("callbackUrl must be HTTPS");
+  }
+
+  if (ALLOWED_ORIGINS.length > 0) {
+    const ok = isCallbackAllowed(urlStr, ALLOWED_ORIGINS);
+    if (!ok) {
+      throw new Error(`callbackUrl host not allowed. Allowed: ${ALLOWED_ORIGINS.join(", ")}`);
+    }
+  }
+}
+
 
 async function cacheUpsert(env: string, row: {
   service: string; subscriptionId: string; subscriptionName?: string; eventName: string;
@@ -98,9 +116,7 @@ async function cacheDelete(env: string, service: string, id: string) {
     await prisma.subscriptionCache.delete({
       where: { env_service_subscriptionId: { env, service, subscriptionId: id } },
     });
-  } catch {
-    // ignore if not present
-  }
+  } catch {}
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -116,23 +132,26 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       date: req.query.date,
     }) as any;
 
-    // --- Action routes (legacy only) ---
+    // ---- Action routes (legacy only) ----
     if (q.action === "resend") {
-      if (req.method !== "POST") return res.status(405).json({ error: "Use POST for action=resend" });
+      if (req.method !== "POST")
+        return res.status(405).json({ error: "Use POST for action=resend" });
       if (!q.id) return res.status(400).json({ error: "id is required" });
       const out = await resendLegacy(q.env, String(q.id));
       return res.status(200).json(out);
     }
 
     if (q.action === "report") {
-      if (req.method !== "GET") return res.status(405).json({ error: "Use GET for action=report" });
-      if (!q.date) return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
+      if (req.method !== "GET")
+        return res.status(405).json({ error: "Use GET for action=report" });
+      if (!q.date)
+        return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
       const out = await reportLegacy(q.env, String(q.date));
       return res.status(200).json(out);
     }
 
-    // --- CRUD (legacy only) ---
-    const service = "legacy" as const;
+    // ---- CRUD (legacy only) ----
+    const service = inferService();
 
     if (req.method === "GET") {
       const id = toStr(req.query.id);
@@ -152,8 +171,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     if (req.method === "POST") {
       const b = BodySchema.parse(req.body) as CreateUpdatePayload;
+      ensureSafeCallback(b.callbackUrl);
       const idem = headerStr(req.headers["idempotency-key"]);
-      const out = await createSubscription(service, q.env, b, { idempotencyKey: idem || undefined });
+      const out = await createSubscription(service, q.env, b, {
+        idempotencyKey: idem || undefined,
+      });
 
       if (out?.subscriptionId) {
         const row = await getSubscription(service, q.env, out.subscriptionId);
@@ -166,10 +188,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const id = toStr(req.query.id);
       if (!id) return res.status(400).json({ error: "id is required" });
       const b = BodySchema.parse(req.body) as CreateUpdatePayload;
+      ensureSafeCallback(b.callbackUrl);
       const idem = headerStr(req.headers["idempotency-key"]);
-      const out = await updateSubscription(service, q.env, id, b, { idempotencyKey: idem || undefined });
+      const out = await updateSubscription(service, q.env, id, b, {
+        idempotencyKey: idem || undefined,
+      });
 
-      const row = await getSubscription(service, q.env, out?.subscriptionId ?? id);
+      const row = await getSubscription(
+        service,
+        q.env,
+        out?.subscriptionId ?? id
+      );
       if (row) await cacheUpsert(q.env, row);
       return res.status(200).json({ ...out, service });
     }
@@ -186,10 +215,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     return res.status(405).json({ error: "Method Not Allowed" });
   } catch (err: any) {
     const msg = err?.message ?? String(err);
-    const status =
-      /Unknown eventName/i.test(msg) ? 400 :
-      /Validation/i.test(msg) ? 400 :
-      /Missing/i.test(msg) ? 400 : 500;
+
+    // Map common upstream auth failures to 401 for cleaner UX
+    const isAuthish =
+      /401\b/.test(msg) ||
+      /Unauthorized/i.test(msg) ||
+      /MerchantFailedToLogin/i.test(msg) ||
+      /MerchantLockedOut/i.test(msg);
+
+    const status = isAuthish
+      ? 401
+      : /Unknown eventName/i.test(msg)
+      ? 400
+      : /Validation/i.test(msg)
+      ? 400
+      : /Missing/i.test(msg)
+      ? 400
+      : 500;
+
     return res.status(status).json({ error: msg });
   }
 }
