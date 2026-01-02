@@ -2,7 +2,6 @@
 set -euo pipefail
 TKN="${1:?usage: token-delete.sh <token>}"
 ENV="${ENV:-sandbox}"
-BASE="${BASE_URL:-http://localhost:3000}"
 json_or_raw(){ jq . 2>/dev/null || cat; }
 
 [[ "${FORCE:-0}" == "1" ]] || { echo "Refusing to DELETE token without FORCE=1"; exit 3; }
@@ -21,5 +20,5 @@ if [[ "${DIRECT:-0}" == "1" ]]; then
     curl -sS -u "$USER:$PASS" -H "Content-Type: application/json" -d "$BODY" "${BASE_UP}${TMPL}" | json_or_raw
   fi
 else
-  curl -sS -X DELETE "${BASE}/api/monoova/token/${TKN}?env=${ENV}" | json_or_raw
+  curl -sS -X DELETE "http://localhost:3000/api/monoova/token/item/${TKN}?env=${ENV}" | json_or_raw
 fi

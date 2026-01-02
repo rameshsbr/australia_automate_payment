@@ -2,7 +2,6 @@
 set -euo pipefail
 TKN="${1:?usage: token-get.sh <token>}"
 ENV="${ENV:-sandbox}"
-BASE="${BASE_URL:-http://localhost:3000}"
 json_or_raw(){ jq . 2>/dev/null || cat; }
 
 if [[ "${DIRECT:-0}" == "1" ]]; then
@@ -13,5 +12,5 @@ if [[ "${DIRECT:-0}" == "1" ]]; then
   [[ "${DEBUG:-0}" == "1" ]] && echo -e "\nGET ${BASE_UP}${PATH_GET}\n" 1>&2
   curl -sS -u "$USER:$PASS" "${BASE_UP}${PATH_GET}" | json_or_raw
 else
-  curl -sS "${BASE}/api/monoova/token/${TKN}?env=${ENV}" | json_or_raw
+  curl -sS "http://localhost:3000/api/monoova/token/item/${TKN}?env=${ENV}" | json_or_raw
 fi

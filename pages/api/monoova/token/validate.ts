@@ -15,7 +15,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     res.status(200).json(out);
   } catch (e: any) {
     const msg = e?.message || String(e);
-    const code = /Unauthorized|MerchantFailedToLogin/i.test(msg) ? 401 : 500;
+    const is401 = /Unauthorized|MerchantFailedToLogin/i.test(msg);
+    const isLocked = /MerchantLockedOut/i.test(msg);
+    const code = is401 || isLocked ? 401 : 500;
     res.status(code).json({ error: msg });
   }
 }
