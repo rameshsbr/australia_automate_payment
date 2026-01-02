@@ -24,10 +24,22 @@ function classNames(...xs: (string | false | null | undefined)[]) {
   return xs.filter(Boolean).join(" ");
 }
 
+type IntervalOpt = 0 | 5 | 15 | 30;
+
 export default function WebhooksViewer() {
   const [rows, setRows] = useState<Row[]>([]);
   const [q, setQ] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // kind chips
+  const kinds = useMemo(
+    () => Array.from(new Set(rows.map((r) => r.kind))).sort(),
+    [rows]
+  );
+  const [kindFilter, setKindFilter] = useState<string | null>(null);
+
+  // auto-refresh
+  const [intervalSec, setIntervalSec] = useState<IntervalOpt>(0);
 
   // ---- Payload modal
   const [openPayload, setOpenPayload] = useState<null | Row>(null);
@@ -52,7 +64,6 @@ export default function WebhooksViewer() {
   async function load() {
     setBusy(true);
     try {
-      // keep using your existing list API
       const r = await fetch("/api/webhooks/list?limit=100", { cache: "no-store" });
       const j = await r.json();
       if (r.ok) setRows(j.rows ?? []);
@@ -63,10 +74,17 @@ export default function WebhooksViewer() {
 
   useEffect(() => {
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // auto refresh timer
+  useEffect(() => {
+    if (!intervalSec) return;
+    const t = setInterval(load, intervalSec * 1000);
+    return () => clearInterval(t);
+  }, [intervalSec]);
+
   function matches(row: Row, term: string) {
+    if (kindFilter && row.kind !== kindFilter) return false;
     if (!term) return true;
     const t = term.toLowerCase();
     return (
@@ -104,7 +122,9 @@ export default function WebhooksViewer() {
   }
 
   function asCurl(row: Row) {
-    const headerBit = sendSig ? `-H "${headerName}: ${process.env.NEXT_PUBLIC_WEBHOOK_SECRET || "<YOUR_SECRET>"}"` : "";
+    const headerBit = sendSig
+      ? `-H "${headerName}: ${process.env.NEXT_PUBLIC_WEBHOOK_SECRET || "<YOUR_SECRET>"}"`
+      : "";
     const url = targetUrl || "<TARGET_URL>";
     const body = pretty(row.payload).replaceAll('"', '\\"');
     return `curl -X POST "${url}" \\\n  -H "Content-Type: application/json" \\\n  ${headerBit}${headerBit ? " \\\n  " : ""}-d "${body}"`;
@@ -116,21 +136,64 @@ export default function WebhooksViewer() {
 
   return (
     <div className="space-y-4">
+      {/* toolbar */}
       <div className="flex items-center gap-2">
         <h1 className="text-lg font-medium">Webhooks</h1>
-        <input
-          className="ml-4 bg-panel border border-outline/40 rounded px-2 py-1 text-sm flex-1"
-          placeholder="Search kind, note, or payload…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <button
-          className="px-3 h-9 rounded-lg bg-surface border border-outline/40 text-sm"
-          onClick={load}
-          disabled={busy}
-        >
-          {busy ? "Refreshing…" : "Refresh"}
-        </button>
+
+        {/* kind chips */}
+        <div className="flex items-center gap-2 ml-2">
+          <button
+            className={classNames(
+              "text-xs rounded px-2 py-1 border",
+              !kindFilter ? "bg-surface" : "bg-panel"
+            )}
+            onClick={() => setKindFilter(null)}
+          >
+            All
+          </button>
+          {kinds.map((k) => (
+            <button
+              key={k}
+              className={classNames(
+                "text-xs rounded px-2 py-1 border",
+                kindFilter === k ? "bg-surface" : "bg-panel"
+              )}
+              onClick={() => setKindFilter(k === kindFilter ? null : k)}
+              title={k}
+            >
+              {k}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-2">
+          <select
+            className="bg-panel border border-outline/40 rounded px-2 py-1 text-sm"
+            value={intervalSec}
+            onChange={(e) => setIntervalSec(Number(e.target.value) as IntervalOpt)}
+            title="Auto refresh"
+          >
+            <option value={0}>Auto: Off</option>
+            <option value={5}>Auto: 5s</option>
+            <option value={15}>Auto: 15s</option>
+            <option value={30}>Auto: 30s</option>
+          </select>
+
+          <input
+            className="bg-panel border border-outline/40 rounded px-2 py-1 text-sm w-[320px]"
+            placeholder="Search kind, note, or payload…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+
+          <button
+            className="px-3 h-9 rounded-lg bg-surface border border-outline/40 text-sm"
+            onClick={load}
+            disabled={busy}
+          >
+            {busy ? "Refreshing…" : "Refresh"}
+          </button>
+        </div>
       </div>
 
       <div className="border border-outline/40 rounded-lg overflow-hidden">
@@ -162,7 +225,6 @@ export default function WebhooksViewer() {
                   <td className="p-2">{r.verified ? "yes" : "no"}</td>
                   <td className="p-2">{r.note || "-"}</td>
                   <td className="p-2">
-                    {/* compact preview, always renders immediately (no skeleton) */}
                     <div className="relative">
                       <pre className="max-w-[520px] max-h-[120px] overflow-auto text-xs bg-panel rounded p-2 border border-outline/30">
                         {pretty(r.payload)}

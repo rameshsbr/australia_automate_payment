@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import NewPaymentMenu from "@/components/payments/new-payment-menu";
 import { FilterChip } from "@/components/payments-common";
 import { Popover, cn, Toggle } from "@/components/ui";
@@ -50,21 +51,55 @@ const TYPE_OPTIONS = [
 ];
 
 const STORAGE_KEY = "transactions.columns";
-
 const chipClass =
   "inline-flex items-center gap-2 bg-panel/90 border border-outline/50 rounded-full px-3 h-9 text-sm cursor-pointer select-none";
 
+// --- helpers ---
+function getEnvFromCookie(): "sandbox" | "live" {
+  if (typeof document === "undefined") return "sandbox";
+  const m = document.cookie.match(/(?:^|;\s*)env=([^;]+)/i);
+  const v = (m?.[1] ?? "SANDBOX").toUpperCase();
+  return v === "LIVE" ? "live" : "sandbox";
+}
+function parseYmd(v: string | null): Date | null {
+  if (!v) return null;
+  const m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+function formatDateKey(date: Date) {
+  const y = date.getFullYear();
+  const m = `${date.getMonth() + 1}`.padStart(2, "0");
+  const d = `${date.getDate()}`.padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 export default function TransactionsExperience() {
-  const defaultRange = useMemo(() => ({ ...getPresetRange("Last 7 days"), preset: "Last 7 days" as DatePreset }), []);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
+  // derive initial range from URL (or default to last 7 days)
+  const initialRange: DateFilterValue = useMemo(() => {
+    const urlFrom = parseYmd(searchParams.get("from"));
+    const urlTo = parseYmd(searchParams.get("to"));
+    if (urlFrom && urlTo) return { from: urlFrom, to: urlTo, preset: "Custom" };
+    return { ...getPresetRange("Last 7 days"), preset: "Last 7 days" };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // compute once on first render
+
   const [transactions, setTransactions] = useState<TransactionRow[]>(MOCK_TRANSACTIONS);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
+
+  // search/filter UI state
+  const [searchText, setSearchText] = useState("");
   const [selectedTypes, setSelectedTypes] = useState<string[]>(TYPE_OPTIONS);
   const [referenceFilter, setReferenceFilter] = useState("");
   const [transactionIdFilter, setTransactionIdFilter] = useState("");
   const [amountFilter, setAmountFilter] = useState<{ min?: number; max?: number }>({});
-  const [dateFilter, setDateFilter] = useState<DateFilterValue>(defaultRange);
+  const [dateFilter, setDateFilter] = useState<DateFilterValue>(initialRange);
   const [columns, setColumns] = useState<Record<ColumnKey, boolean>>({
     date: true,
     description: true,
@@ -76,30 +111,36 @@ export default function TransactionsExperience() {
     identifier: false
   });
 
+  // current mAccount (optional)
+  const mAccount = searchParams.get("m") ?? undefined;
+
+  // persist columns
   useEffect(() => {
     try {
       const saved = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null;
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setColumns((prev) => ({ ...prev, ...parsed }));
-      }
-    } catch {
-      // ignore
-    }
+      if (saved) setColumns((prev) => ({ ...prev, ...JSON.parse(saved) }));
+    } catch {}
   }, []);
-
   useEffect(() => {
     if (typeof window === "undefined") return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(columns));
-    } catch {
-      // ignore
-    }
+    } catch {}
   }, [columns]);
 
+  // on first mount OR when URL query dates change externally, update range
   useEffect(() => {
-    void fetchTransactions(defaultRange);
-  }, [defaultRange]);
+    const f = parseYmd(searchParams.get("from"));
+    const t = parseYmd(searchParams.get("to"));
+    if (f && t) setDateFilter({ from: f, to: t, preset: "Custom" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get("from"), searchParams.get("to")]);
+
+  // initial fetch (and refetch when mAccount changes)
+  useEffect(() => {
+    void fetchTransactions(dateFilter, mAccount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mAccount]);
 
   const visibleColumns = COLUMN_DEFS.filter((c) => columns[c.key]);
 
@@ -113,8 +154,8 @@ export default function TransactionsExperience() {
       const txDate = new Date(tx.date ?? Date.now());
       if (txDate < rangeStart || txDate > rangeEnd) return false;
 
-      if (search.trim()) {
-        const query = search.toLowerCase();
+      if (searchText.trim()) {
+        const query = searchText.toLowerCase();
         const haystack = [tx.description, tx.reference, tx.transactionId, tx.identifier]
           .filter(Boolean)
           .join(" ")
@@ -145,7 +186,17 @@ export default function TransactionsExperience() {
 
       return true;
     });
-  }, [amountFilter.max, amountFilter.min, dateFilter.from, dateFilter.to, referenceFilter, search, selectedTypes, transactionIdFilter, transactions]);
+  }, [
+    amountFilter.max,
+    amountFilter.min,
+    dateFilter.from,
+    dateFilter.to,
+    referenceFilter,
+    searchText,
+    selectedTypes,
+    transactionIdFilter,
+    transactions
+  ]);
 
   const typeSummary = useMemo(() => {
     if (!selectedTypes.length) return "All types";
@@ -155,36 +206,51 @@ export default function TransactionsExperience() {
   }, [selectedTypes]);
 
   const resetFilters = () => {
-    setSearch("");
+    setSearchText("");
     setSelectedTypes(TYPE_OPTIONS);
     setReferenceFilter("");
     setTransactionIdFilter("");
     setAmountFilter({});
-    setDateFilter(defaultRange);
-    void fetchTransactions(defaultRange);
+    const def = { ...getPresetRange("Last 7 days"), preset: "Last 7 days" as DatePreset };
+    setDateFilter(def);
+    updateUrlDates(def.from, def.to, { preserveM: true });
+    void fetchTransactions(def, mAccount);
   };
 
-  async function fetchTransactions(range: DateFilterValue) {
+  function updateUrlDates(from: Date, to: Date, opts: { preserveM?: boolean } = {}) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("from", formatDateKey(from));
+    params.set("to", formatDateKey(to));
+    if (!opts.preserveM) params.delete("m"); // keep as-is unless asked
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  async function fetchTransactions(range: DateFilterValue, m?: string) {
     try {
       setLoading(true);
       setError(null);
-      const params = new URLSearchParams({
-        from: formatDateKey(range.from),
-        to: formatDateKey(range.to),
-        pageSize: "200"
-      });
-      const res = await fetch(`/api/internal/transactions/status-by-date?${params.toString()}`, {
-        cache: "no-store"
-      });
-      if (!res.ok) throw new Error(`Request failed (${res.status})`);
-      const payload = await res.json();
-      const normalized = normalizeTransactions(payload);
-      if (normalized.length) {
-        setTransactions(normalized);
+
+      const env = getEnvFromCookie();
+      const fromKey = formatDateKey(range.from);
+      const toKey = formatDateKey(range.to);
+
+      let url: string;
+      if (m) {
+        // new account-scoped endpoint
+        url = `/api/monoova/account/${encodeURIComponent(m)}/transactions/${fromKey}/${toKey}?env=${env}`;
       } else {
-        setTransactions(MOCK_TRANSACTIONS);
+        // legacy internal endpoint (no mAccount in URL)
+        const params = new URLSearchParams({ from: fromKey, to: toKey, pageSize: "200" });
+        url = `/api/internal/transactions/status-by-date?${params.toString()}`;
       }
-    } catch (err) {
+
+      const res = await fetch(url, { cache: "no-store" });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(payload?.error || `Request failed (${res.status})`);
+
+      const normalized = normalizeTransactions(payload);
+      setTransactions(normalized.length ? normalized : MOCK_TRANSACTIONS);
+    } catch (err: any) {
       console.error(err);
       setError("Unable to refresh transactions from the API. Showing the latest cached results.");
       setTransactions(MOCK_TRANSACTIONS);
@@ -196,7 +262,14 @@ export default function TransactionsExperience() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Transactions</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-2xl font-semibold">Transactions</h1>
+          {mAccount ? (
+            <span className="text-xs text-subt border border-outline/40 rounded px-2 py-1">
+              mAccount: <span className="font-mono">{mAccount}</span>
+            </span>
+          ) : null}
+        </div>
         <NewPaymentMenu />
       </div>
 
@@ -212,8 +285,8 @@ export default function TransactionsExperience() {
             </svg>
           </div>
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
             className="w-full bg-panel border border-outline/60 rounded-lg h-11 pl-9 pr-3 text-sm placeholder:text-subt/70 focus:outline-none"
             placeholder="Search transactions..."
           />
@@ -228,7 +301,14 @@ export default function TransactionsExperience() {
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <DateFilterChip value={dateFilter} onChange={(next) => { setDateFilter(next); void fetchTransactions(next); }} />
+        <DateFilterChip
+          value={dateFilter}
+          onChange={(next) => {
+            setDateFilter(next);
+            updateUrlDates(next.from, next.to, { preserveM: true });
+            void fetchTransactions(next, mAccount);
+          }}
+        />
 
         <TypeFilterChip
           selected={selectedTypes}
@@ -305,6 +385,8 @@ export default function TransactionsExperience() {
     </div>
   );
 }
+
+// --- cells and filter UI (unchanged aside from searchText rename) ---
 
 function CellValue({ tx, column }: { tx: TransactionRow; column: ColumnKey }) {
   if (column === "date") {
@@ -446,6 +528,8 @@ function normalizeTransactions(payload: any): TransactionRow[] {
     };
   });
 }
+
+// ----- Filter chips (unchanged UI) -----
 
 function DateFilterChip({ value, onChange }: { value: DateFilterValue; onChange: (next: DateFilterValue) => void }) {
   const [cursor, setCursor] = useState<Date>(value.to);
@@ -881,36 +965,26 @@ function ColumnsPopover({
   );
 }
 
+// --- tiny date utils ---
 function addDays(date: Date, days: number) {
   const d = new Date(date);
   d.setDate(d.getDate() + days);
   return d;
 }
-
 function startOfCalendar(date: Date) {
   const start = new Date(date.getFullYear(), date.getMonth(), 1);
   const day = start.getDay() === 0 ? 7 : start.getDay();
   start.setDate(start.getDate() - (day - 1));
   return start;
 }
-
 function formatRange(from: Date, to: Date) {
   return `${formatHuman(from)} - ${formatHuman(to)}`;
 }
-
-function formatDateKey(date: Date) {
-  const y = date.getFullYear();
-  const m = `${date.getMonth() + 1}`.padStart(2, "0");
-  const d = `${date.getDate()}`.padStart(2, "0");
-  return `${y}-${m}-${d}`;
-}
-
 function startOfDayValue(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
   return d.getTime();
 }
-
 function formatHuman(date: Date) {
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   return `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;

@@ -1,7 +1,7 @@
 // components/chrome.tsx
 "use client";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import ModeProvider, { useAppMode } from "@/components/mode/ModeProvider";
@@ -41,6 +41,67 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2 text-subt px-3 py-2 text-sm">
       {children}
+    </div>
+  );
+}
+
+/** Small dot that polls /api/dev/health */
+function HealthPill() {
+  const [state, setState] = useState<{
+    ok: boolean;
+    degraded: boolean;
+    tip: string;
+  }>({ ok: true, degraded: false, tip: "loading…" });
+
+  useEffect(() => {
+    let mounted = true;
+    let t: any;
+
+    const fetchIt = async () => {
+      try {
+        const r = await fetch("/api/dev/health", { cache: "no-store" });
+        const j = await r.json().catch(() => ({}));
+        if (!mounted) return;
+
+        const parts: string[] = [];
+        const okBits: boolean[] = [];
+        if (j?.db) {
+          parts.push(`DB:${j.db.ok ? "ok" : "fail"}(${j.db.ms}ms)`);
+          okBits.push(Boolean(j.db.ok));
+        }
+        if (j?.monoova) {
+          parts.push(`Monoova:${j.monoova.ok ? "ok" : "fail"}(${j.monoova.status ?? "?"})`);
+          okBits.push(Boolean(j.monoova.ok));
+        }
+        if (j?.callback) {
+          parts.push(`Callback:${j.callback.ok ? "ok" : "fail"}(${j.callback.status ?? "?"})`);
+          okBits.push(Boolean(j.callback.ok));
+        }
+        const okCount = okBits.filter(Boolean).length;
+        const ok = okCount === okBits.length && okBits.length > 0;
+        const degraded = !ok && okCount > 0;
+
+        setState({ ok, degraded, tip: parts.join(" • ") || "no data" });
+      } catch {
+        if (!mounted) return;
+        setState({ ok: false, degraded: false, tip: "health check error" });
+      } finally {
+        t = setTimeout(fetchIt, 20000);
+      }
+    };
+
+    fetchIt();
+    return () => {
+      mounted = false;
+      if (t) clearTimeout(t);
+    };
+  }, []);
+
+  const color = state.ok ? "bg-green-500" : state.degraded ? "bg-amber-400" : "bg-red-500";
+
+  return (
+    <div className="flex items-center gap-2" title={state.tip}>
+      <span className={clsx("inline-block w-2.5 h-2.5 rounded-full", color)} />
     </div>
   );
 }
@@ -160,6 +221,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
             {/* Right side */}
             <div className="flex items-center gap-3">
+              <HealthPill />
               <div className="text-sm text-subt">{mode === "sandbox" ? "Sandbox" : "Live"} mode</div>
               <ModeToggle />
               <div className="w-8 h-8 rounded-full bg-panel flex items-center justify-center text-xs">RS</div>
