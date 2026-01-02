@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useAppMode } from "@/components/mode/ModeProvider";
 
 type Row = { mAccount: string; name: string; currency: string };
+type TokenRow = { token: string; type?: string; nickname?: string; createdAt?: string | null; raw?: any };
 
 export default function AccountsPage() {
   const mode = useAppMode(); // "sandbox" | "live"
@@ -19,6 +20,7 @@ export default function AccountsPage() {
   const [editing, setEditing] = useState<null | Row>(null);
   const [closing, setClosing] = useState<null | Row>(null);
   const [stmtRow, setStmtRow] = useState<null | Row>(null);
+  const [tokensRow, setTokensRow] = useState<null | Row>(null);
 
   async function load() {
     setBusy(true);
@@ -106,6 +108,7 @@ export default function AccountsPage() {
                     <button className="hover:underline" onClick={() => setEditing(r)}>Update</button>
                     <button className="hover:underline" onClick={() => setStmtRow(r)}>Send statement</button>
                     <button className="hover:underline" onClick={() => setClosing(r)}>Close</button>
+                    <button className="hover:underline" onClick={() => setTokensRow(r)}>Tokens</button>
                   </div>
                 </td>
               </tr>
@@ -127,6 +130,9 @@ export default function AccountsPage() {
 
       {/* Statement modal */}
       {stmtRow && <StatementModal mode={mode} row={stmtRow} onClose={() => setStmtRow(null)} />}
+
+      {/* Tokens modal */}
+      {tokensRow && <TokensModal mode={mode} row={tokensRow} onClose={() => setTokensRow(null)} />}
     </>
   );
 }
@@ -301,10 +307,172 @@ function StatementModal({ mode, row, onClose }: { mode: "sandbox" | "live"; row:
   );
 }
 
+function TokensModal({ mode, row, onClose }: { mode: "sandbox" | "live"; row: { mAccount: string; name: string }; onClose: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [tokens, setTokens] = useState<TokenRow[]>([]);
+  const [detailToken, setDetailToken] = useState<string | null>(null);
+  const [detailOut, setDetailOut] = useState<any | null>(null);
+  const [detailBusy, setDetailBusy] = useState(false);
+
+  const [editToken, setEditToken] = useState<string | null>(null);
+  const [nickname, setNickname] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+
+  const [deleteBusy, setDeleteBusy] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true); setErr(null); setTokens([]);
+    try {
+      const r = await fetch(`/api/monoova/token/${encodeURIComponent(row.mAccount)}/list?env=${mode}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || r.statusText);
+      const items: TokenRow[] = Array.isArray(j) ? j : (j?.rows ?? j?.tokens ?? []);
+      setTokens(items);
+    } catch (e: any) {
+      setErr(e?.message || String(e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function getDetails(t: string) {
+    setDetailBusy(true); setDetailOut(null); setDetailToken(t);
+    try {
+      const r = await fetch(`/api/monoova/token/${encodeURIComponent(t)}?env=${mode}`, { cache: "no-store" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || r.statusText);
+      setDetailOut(j);
+    } catch (e: any) {
+      alert(e?.message || String(e));
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
+  async function saveNickname() {
+    if (!editToken) return;
+    setEditBusy(true);
+    try {
+      const r = await fetch(`/api/monoova/token/${encodeURIComponent(editToken)}?env=${mode}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || r.statusText);
+      setEditToken(null); setNickname("");
+      await load();
+    } catch (e: any) {
+      alert(e?.message || String(e));
+    } finally {
+      setEditBusy(false);
+    }
+  }
+
+  async function deleteToken(t: string) {
+    if (!confirm(`Delete token ${t}?`)) return;
+    setDeleteBusy(t);
+    try {
+      const r = await fetch(`/api/monoova/token/${encodeURIComponent(t)}?env=${mode}`, { method: "DELETE" });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || r.statusText);
+      await load();
+    } catch (e: any) {
+      alert(e?.message || String(e));
+    } finally {
+      setDeleteBusy(null);
+    }
+  }
+
+  // initial load
+  useEffect(() => { void load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
+
+  return (
+    <Modal title={`Tokens – ${row.mAccount}`} onClose={onClose}>
+      <div className="space-y-3 text-sm">
+        <div className="flex items-center gap-2">
+          <button className="px-3 h-8 rounded bg-surface border border-outline/40" onClick={load} disabled={loading}>
+            {loading ? "Loading…" : "Refresh"}
+          </button>
+          {err && <div className="text-amber-300">{err}</div>}
+        </div>
+
+        <div className="border border-outline/30 rounded">
+          <table className="w-full text-sm">
+            <thead className="bg-surface/60">
+              <tr className="text-subt">
+                <th className="text-left p-2">Token</th>
+                <th className="text-left p-2">Type</th>
+                <th className="text-left p-2">Nickname</th>
+                <th className="text-left p-2">Created</th>
+                <th className="text-left p-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tokens.length === 0 ? (
+                <tr><td className="p-4 text-subt text-center" colSpan={5}>{loading ? "Loading…" : "No tokens"}</td></tr>
+              ) : tokens.map((t) => (
+                <tr key={t.token} className="border-t border-outline/30">
+                  <td className="p-2 font-mono">{t.token}</td>
+                  <td className="p-2">{t.type || "—"}</td>
+                  <td className="p-2">{t.nickname || "—"}</td>
+                  <td className="p-2">{t.createdAt || "—"}</td>
+                  <td className="p-2">
+                    <div className="inline-flex items-center gap-3 text-subt">
+                      <button className="hover:underline" onClick={() => getDetails(t.token)}>
+                        {detailBusy && detailToken === t.token ? "Loading…" : "Details"}
+                      </button>
+                      <button className="hover:underline" onClick={() => { setEditToken(t.token); setNickname(t.nickname || ""); }}>
+                        Update
+                      </button>
+                      <button className="hover:underline" onClick={() => deleteToken(t.token)} disabled={deleteBusy === t.token}>
+                        {deleteBusy === t.token ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Inline editor */}
+        {editToken && (
+          <div className="p-3 bg-surface border border-outline/30 rounded">
+            <div className="text-subt mb-2">Update nickname for <span className="font-mono">{editToken}</span></div>
+            <div className="flex items-center gap-2">
+              <input className="flex-1 bg-panel border border-outline/40 rounded px-2 py-1"
+                     value={nickname} onChange={e=>setNickname(e.target.value)} placeholder="Nickname" />
+              <button className="px-3 h-8 rounded bg-black text-white disabled:opacity-60" disabled={editBusy} onClick={saveNickname}>
+                {editBusy ? "Saving…" : "Save"}
+              </button>
+              <button className="px-3 h-8 rounded border border-outline/40" onClick={() => { setEditToken(null); setNickname(""); }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Details viewer */}
+        {detailOut && (
+          <div className="p-3 bg-surface border border-outline/30 rounded">
+            <div className="flex items-center justify-between">
+              <div className="text-subt">Token details – <span className="font-mono">{detailToken}</span></div>
+              <button className="text-xs text-subt hover:text-white" onClick={() => { setDetailOut(null); setDetailToken(null); }}>Close</button>
+            </div>
+            <pre className="mt-2 text-xs overflow-auto">{JSON.stringify(detailOut, null, 2)}</pre>
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-surface border border-outline/40 rounded-xl w-[min(640px,92vw)] shadow-xl">
+      <div className="bg-surface border border-outline/40 rounded-xl w-[min(820px,92vw)] shadow-xl">
         <div className="flex items-center justify-between px-4 py-3 border-b border-outline/30">
           <div className="font-medium text-sm">{title}</div>
           <button className="text-subt hover:text-white text-sm" onClick={onClose}>Close</button>
