@@ -1,1 +1,5 @@
-{ "bsb":"062000", "accountNumber":"123456789", "nickname":"CLI test" }
+{
+  "accountName": "Test Account",
+  "bsb": "062000",
+  "accountNumber": "11111111"
+}

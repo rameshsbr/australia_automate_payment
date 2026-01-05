@@ -35,7 +35,6 @@ function fingerprint(buf: Buffer, headers: NextApiRequest["headers"]): string {
 }
 
 // in pages/api/webhooks/provider.ts
-
 function readSig(req: NextApiRequest): string | null {
   const pick = (h: string | string[] | undefined) =>
     (Array.isArray(h) ? h[0] : h)?.trim().replace(/^"+|"+$/g, "") || null;
@@ -52,7 +51,6 @@ function verifySharedSecret(req: NextApiRequest): boolean {
   if (!expected) return false;
   return sig === expected;
 }
-
 
 function clientIp(req: NextApiRequest): string {
   const xff = (req.headers["x-forwarded-for"] as string) || "";

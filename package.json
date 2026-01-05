@@ -24,6 +24,7 @@
     "date-fns": "2.30.0",
     "dayjs": "1.11.13",
     "next": "14.2.8",
+    "raw-body": "^3.0.2",
     "react": "18.3.1",
     "react-day-picker": "8.10.1",
     "react-dom": "18.3.1",

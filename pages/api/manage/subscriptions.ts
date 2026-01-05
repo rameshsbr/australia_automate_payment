@@ -86,6 +86,13 @@ function ensureSafeCallback(urlStr: string) {
   }
 }
 
+function envFromReq(req: NextApiRequest): "sandbox" | "live" {
+  const q = String(req.query.env || "").toLowerCase();
+  if (q === "live") return "live";
+  if (q === "sandbox") return "sandbox";
+  const c = String(req.cookies?.env || "").toLowerCase();
+  return c === "live" ? "live" : "sandbox";
+}
 
 async function cacheUpsert(env: string, row: {
   service: string; subscriptionId: string; subscriptionName?: string; eventName: string;
@@ -132,12 +139,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       date: req.query.date,
     }) as any;
 
+    const env = envFromReq(req); // ← unified env source
+
     // ---- Action routes (legacy only) ----
     if (q.action === "resend") {
       if (req.method !== "POST")
         return res.status(405).json({ error: "Use POST for action=resend" });
       if (!q.id) return res.status(400).json({ error: "id is required" });
-      const out = await resendLegacy(q.env, String(q.id));
+      const out = await resendLegacy(env, String(q.id));
       return res.status(200).json(out);
     }
 
@@ -146,7 +155,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         return res.status(405).json({ error: "Use GET for action=report" });
       if (!q.date)
         return res.status(400).json({ error: "date (YYYY-MM-DD) is required" });
-      const out = await reportLegacy(q.env, String(q.date));
+      const out = await reportLegacy(env, String(q.date));
       return res.status(200).json(out);
     }
 
@@ -156,16 +165,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     if (req.method === "GET") {
       const id = toStr(req.query.id);
       if (id) {
-        const row = await getSubscription(service, q.env, id);
+        const row = await getSubscription(service, env, id);
         if (row) {
-          await cacheUpsert(q.env, row);
+          await cacheUpsert(env, row);
           return res.status(200).json({ row });
         }
         return res.status(404).json({ error: "Subscription not found" });
       }
 
-      const rows = await listSubscriptions(service, q.env);
-      await Promise.all(rows.map((r) => cacheUpsert(q.env, r)));
+      const rows = await listSubscriptions(service, env);
+      await Promise.all(rows.map((r) => cacheUpsert(env, r)));
       return res.status(200).json({ rows });
     }
 
@@ -173,13 +182,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const b = BodySchema.parse(req.body) as CreateUpdatePayload;
       ensureSafeCallback(b.callbackUrl);
       const idem = headerStr(req.headers["idempotency-key"]);
-      const out = await createSubscription(service, q.env, b, {
+      const out = await createSubscription(service, env, b, {
         idempotencyKey: idem || undefined,
       });
 
       if (out?.subscriptionId) {
-        const row = await getSubscription(service, q.env, out.subscriptionId);
-        if (row) await cacheUpsert(q.env, row);
+        const row = await getSubscription(service, env, out.subscriptionId);
+        if (row) await cacheUpsert(env, row);
       }
       return res.status(201).json({ ...out, service });
     }
@@ -190,24 +199,24 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const b = BodySchema.parse(req.body) as CreateUpdatePayload;
       ensureSafeCallback(b.callbackUrl);
       const idem = headerStr(req.headers["idempotency-key"]);
-      const out = await updateSubscription(service, q.env, id, b, {
+      const out = await updateSubscription(service, env, id, b, {
         idempotencyKey: idem || undefined,
       });
 
       const row = await getSubscription(
         service,
-        q.env,
+        env,
         out?.subscriptionId ?? id
       );
-      if (row) await cacheUpsert(q.env, row);
+      if (row) await cacheUpsert(env, row);
       return res.status(200).json({ ...out, service });
     }
 
     if (req.method === "DELETE") {
       const id = toStr(req.query.id);
       if (!id) return res.status(400).json({ error: "id is required" });
-      await deleteSubscription(service, q.env, id);
-      await cacheDelete(q.env, service, id);
+      await deleteSubscription(service, env, id);
+      await cacheDelete(env, service, id);
       return res.status(204).end();
     }
 

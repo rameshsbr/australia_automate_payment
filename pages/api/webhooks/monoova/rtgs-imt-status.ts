@@ -1,9 +1,16 @@
-import type { NextApiRequest, NextApiResponse } from "next";
+import type { NextApiResponse } from "next";
 import { recordWebhook } from "@/lib/monoova/webhooks";
+import { withMonoovaVerify, config as verifyConfig, MonoovaWebhookRequest } from "../_monoova-verify";
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+export const config = verifyConfig;
+
+async function handler(req: MonoovaWebhookRequest, res: NextApiResponse) {
   if (req.method !== "POST") return res.status(405).end();
-  const payload = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-  await recordWebhook("rtgs-imt-status", payload, false, "unverified");
+  const payload =
+    req.monoovaPayload ??
+    (typeof (req as any).body === "string" ? JSON.parse((req as any).body) : (req as any).body);
+  await recordWebhook("rtgs-imt-status", payload, true, "verified");
   res.status(200).json({ received: true });
 }
+
+export default withMonoovaVerify(handler);

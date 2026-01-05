@@ -47,7 +47,13 @@ const EVENT_TO_ROUTE: Record<string, string> = {
 };
 
 export default function DeveloperSubscriptionsPage() {
-  const [env, setEnv] = useState<Env>("sandbox");
+  // (Optional) show env label using cookie, but do not control logic via state
+  const [envLabel, setEnvLabel] = useState<Env>("sandbox");
+  useEffect(() => {
+    const m = document.cookie.match(/(?:^|;\s*)env=(live|sandbox)/i);
+    setEnvLabel((m?.[1]?.toLowerCase() as Env) || "sandbox");
+  }, []);
+
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -73,15 +79,17 @@ export default function DeveloperSubscriptionsPage() {
   function prefillCallback(nextEvent: string) {
     const suffix = EVENT_TO_ROUTE[nextEvent] || "/api/webhooks/monoova/npp-payment-status";
     if (!hintBase || !/^https:\/\//i.test(hintBase)) return suffix; // fall back
-    return `${hintBase.replace(/\/+$/,"")}${suffix}`;
+    return `${hintBase.replace(/\/+$/, "")}${suffix}`;
   }
 
   async function fetchList() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/manage/subscriptions?env=${env}&service=legacy`, {
+      // No ?env= — server reads cookie
+      const res = await fetch(`/api/manage/subscriptions`, {
         headers: apiKeyHeader(),
+        cache: "no-store",
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.error || res.statusText);
@@ -96,7 +104,7 @@ export default function DeveloperSubscriptionsPage() {
   useEffect(() => {
     fetchList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [env]);
+  }, []);
 
   function startCreate() {
     const eventName = LEGACY_EVENTS[0] as string;
@@ -125,7 +133,7 @@ export default function DeveloperSubscriptionsPage() {
       emailBcc: form.emailBcc ? form.emailBcc.split(",").map(s => s.trim()).filter(Boolean) : undefined,
     };
 
-    const res = await fetch(`/api/manage/subscriptions?env=${env}`, {
+    const res = await fetch(`/api/manage/subscriptions`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), ...apiKeyHeader() },
       body: JSON.stringify(payload),
@@ -164,7 +172,7 @@ export default function DeveloperSubscriptionsPage() {
       emailBcc: form.emailBcc ? form.emailBcc.split(",").map(s => s.trim()).filter(Boolean) : undefined,
     };
 
-    const res = await fetch(`/api/manage/subscriptions?env=${env}&id=${encodeURIComponent(editing.subscriptionId)}`, {
+    const res = await fetch(`/api/manage/subscriptions?id=${encodeURIComponent(editing.subscriptionId)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID(), ...apiKeyHeader() },
       body: JSON.stringify(payload),
@@ -180,7 +188,7 @@ export default function DeveloperSubscriptionsPage() {
 
   async function remove(row: Row) {
     if (!confirm(`Delete subscription ${row.subscriptionId}?`)) return;
-    const res = await fetch(`/api/manage/subscriptions?env=${env}&id=${encodeURIComponent(row.subscriptionId)}`, {
+    const res = await fetch(`/api/manage/subscriptions?id=${encodeURIComponent(row.subscriptionId)}`, {
       method: "DELETE",
       headers: apiKeyHeader(),
     });
@@ -196,7 +204,7 @@ export default function DeveloperSubscriptionsPage() {
   async function resendLegacy() {
     const webhookId = prompt("Enter webhook delivery id to resend:");
     if (!webhookId) return;
-    const res = await fetch(`/api/manage/subscriptions?env=${env}&action=resend&id=${encodeURIComponent(webhookId)}`, {
+    const res = await fetch(`/api/manage/subscriptions?action=resend&id=${encodeURIComponent(webhookId)}`, {
       method: "POST",
       headers: apiKeyHeader(),
     });
@@ -208,12 +216,11 @@ export default function DeveloperSubscriptionsPage() {
   async function reportLegacy() {
     const date = prompt("Enter date (YYYY-MM-DD) for report:");
     if (!date) return;
-    const res = await fetch(`/api/manage/subscriptions?env=${env}&action=report&date=${encodeURIComponent(date)}`, {
+    const res = await fetch(`/api/manage/subscriptions?action=report&date=${encodeURIComponent(date)}`, {
       headers: apiKeyHeader(),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok) { alert(j?.error || res.statusText); return; }
-    // show raw JSON quickly; you can pretty this up later
     alert("Report fetched (see console).");
     console.log("Legacy Report", j);
   }
@@ -224,22 +231,11 @@ export default function DeveloperSubscriptionsPage() {
       <div className="flex items-center gap-4">
         <h1 className="text-2xl font-semibold">Subscriptions</h1>
         <span className="text-xs rounded px-2 py-1 border">Service: legacy</span>
+        <span className="text-xs rounded px-2 py-1 border">Env: {envLabel}</span>
         <div className="ml-auto flex gap-2">
           <button className="px-3 py-2 border rounded" onClick={resendLegacy}>Resend (legacy)</button>
           <button className="px-3 py-2 border rounded" onClick={reportLegacy}>Report (legacy)</button>
         </div>
-      </div>
-
-      <div className="flex gap-4 items-center">
-        <label className="text-sm">Environment</label>
-        <select className="border px-2 py-1 rounded" value={env} onChange={(e) => setEnv(e.target.value as Env)}>
-          <option value="sandbox">sandbox</option>
-          <option value="live">live</option>
-        </select>
-
-        <button onClick={startCreate} className="ml-auto bg-black text-white px-3 py-2 rounded">
-          + New Subscription
-        </button>
       </div>
 
       {error && <div className="text-red-600 text-sm">{error}</div>}
