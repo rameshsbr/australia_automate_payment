@@ -11,6 +11,7 @@ const TABS = [
   { href: "/developer/api-keys", label: "API keys" },
   { href: "/developer/subscriptions", label: "Subscriptions" },
   { href: "/developer/webhooks", label: "Webhooks" },
+  { href: "/developer/tools", label: "Tools" },
 ];
 
 export default function DeveloperLayout({ children }: { children: React.ReactNode }) {
