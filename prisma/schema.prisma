@@ -119,3 +119,17 @@ model SubscriptionCache {
 
   @@unique([env, service, subscriptionId])
 }
+
+model PayIdRegistry {
+  id                String   @id @default(cuid())
+  env               String   // "sandbox" | "live"
+  payId             String
+  payIdName         String?
+  bsb               String
+  bankAccountNumber String
+  status            String?  // e.g. "Active" | "Inactive"
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([env, payId])
+}

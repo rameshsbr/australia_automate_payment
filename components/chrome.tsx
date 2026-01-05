@@ -182,6 +182,7 @@ function ShellInner({ children }: { children: React.ReactNode }) {
         )}
 
         <NavItem href="/automatchers" label="Automatchers" icon="🧠" currentPath={normalizedPath} modePrefix={modePrefix} />
+        <NavItem href="/payid" label="PayID" icon="🔖" currentPath={normalizedPath} modePrefix={modePrefix} />
         <NavItem href="/statements" label="Statements" icon="📄" currentPath={normalizedPath} modePrefix={modePrefix} />
         <NavItem href="/reports" label="Reports" icon="📈" currentPath={normalizedPath} modePrefix={modePrefix} />
 
@@ -196,15 +197,15 @@ function ShellInner({ children }: { children: React.ReactNode }) {
 
       {/* Main */}
       <main className="flex-1 overflow-auto">
-        {/* Purple strip */}
+        {/* Purple strip (sticky) */}
         {mode === "sandbox" && (
-          <div className="h-8 bg-[#6d44c9] flex items-center justify-center text-xs font-medium tracking-wide">
+          <div className="sticky top-0 z-30 h-8 bg-[#6d44c9] flex items-center justify-center text-xs font-medium tracking-wide">
             SANDBOX MODE
           </div>
         )}
 
-        {/* Topbar */}
-        <div className={clsx("sticky z-10 bg-surface/80 backdrop-blur border-b border-outline/40", topOffset)}>
+        {/* Topbar (sticky under purple strip) */}
+        <div className={clsx("sticky z-20 bg-surface/80 backdrop-blur border-b border-outline/40", topOffset)}>
           <div className="flex items-center justify-between px-6 h-14">
             {/* Search */}
             <div className="flex items-center gap-2 w-[520px]">
